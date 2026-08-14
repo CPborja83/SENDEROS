@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071321">
+  <title>PRUEBA · Bebé Azul 3D · Senderos Lajuj</title>
+  <style>
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#071321;color:#eef8ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+    body{background:radial-gradient(circle at 50% 35%,#173853 0,#0b2032 42%,#050b12 100%)}
+    canvas{display:block;width:100%;height:100%}
+    .top{position:fixed;z-index:5;left:16px;right:16px;top:16px;display:flex;gap:12px;align-items:center;justify-content:space-between;pointer-events:none}
+    .card{pointer-events:auto;background:rgba(5,17,28,.86);border:1px solid rgba(112,207,255,.35);border-radius:16px;padding:12px 14px;box-shadow:0 12px 35px rgba(0,0,0,.32);backdrop-filter:blur(10px)}
+    h1{font-size:18px;margin:0 0 4px}.muted{font-size:12px;opacity:.78}
+    .controls{position:fixed;z-index:5;left:50%;bottom:18px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:94vw}
+    button{border:1px solid rgba(125,214,255,.45);background:#123451;color:#fff;border-radius:12px;padding:10px 13px;font-weight:800;cursor:pointer}
+    button:hover{background:#195076}.ok{color:#9df6b1}.bad{color:#ff9c9c}
+    @media(max-width:640px){.top{top:8px;left:8px;right:8px}.card{padding:9px 11px}h1{font-size:15px}.controls{bottom:9px}}
+  </style>
+</head>
+<body>
+  <canvas id="modelCanvas" aria-label="Vista 3D del Bebé Azul"></canvas>
+
+  <div class="top">
+    <div class="card">
+      <h1>🧪 PRUEBA · BEBÉ AZUL 3D</h1>
+      <div id="status" class="muted">Cargando el modelo integrado…</div>
+    </div>
+    <div class="card muted">Esta pantalla es solo para validar el personaje antes de seguir con el resto del juego.</div>
+  </div>
+
+  <div class="controls card">
+    <button id="left">↶ Girar</button>
+    <button id="auto">⏸ Detener giro</button>
+    <button id="right">Girar ↷</button>
+    <button id="near">＋ Acercar</button>
+    <button id="far">− Alejar</button>
+    <button id="back">← Volver al juego</button>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/webgl-engine.js"></script>
+  <script src="js/glb-model.js"></script>
+  <script>
+  (async function(){
+    const canvas=document.getElementById('modelCanvas'),status=document.getElementById('status');
+    const gl=canvas.getContext('webgl',{alpha:false,antialias:true,powerPreference:'high-performance'})||canvas.getContext('experimental-webgl');
+    if(!gl){status.className='muted bad';status.textContent='Este navegador no ofrece WebGL.';return;}
+
+    let angle=0,auto=true,distance=6.3,last=performance.now(),drag=false,lastX=0;
+    const model=Lajuj.GLBModel.load(gl,'assets/models/bebe_azul.glb');
+    await model.promise;
+    if(!model.ready){
+      status.className='muted bad';
+      status.textContent='No se pudo cargar el modelo. El juego conservará automáticamente el avatar provisional.';
+      return;
+    }
+    status.className='muted ok';
+    status.textContent=`Modelo listo · ${model.vertexCount.toLocaleString()} vértices · ${model.triangleCount.toLocaleString()} triángulos`;
+
+    function resize(){
+      const d=Math.min(2,devicePixelRatio||1);
+      const w=Math.max(1,Math.round(innerWidth*d)),h=Math.max(1,Math.round(innerHeight*d));
+      if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
+      gl.viewport(0,0,canvas.width,canvas.height);
+    }
+
+    function frame(now){
+      requestAnimationFrame(frame);
+      resize();
+      const dt=Math.min(.05,(now-last)/1000);last=now;
+      if(auto)angle+=dt*.55;
+
+      gl.viewport(0,0,canvas.width,canvas.height);
+      gl.clearColor(.028,.075,.115,1);
+      gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+      const M=Lajuj.Mat4;
+      const proj=M.perspective(42*Math.PI/180,canvas.clientWidth/Math.max(1,canvas.clientHeight),.1,100);
+      const view=M.lookAt([0,2.9,distance],[0,1.05,0],[0,1,0]);
+      const vp=M.multiply(proj,view);
+      model.draw(vp,0,0,angle,1,0);
+    }
+
+    document.getElementById('left').onclick=()=>{auto=false;angle-=Math.PI/8;document.getElementById('auto').textContent='▶ Giro automático'};
+    document.getElementById('right').onclick=()=>{auto=false;angle+=Math.PI/8;document.getElementById('auto').textContent='▶ Giro automático'};
+    document.getElementById('auto').onclick=()=>{auto=!auto;document.getElementById('auto').textContent=auto?'⏸ Detener giro':'▶ Giro automático'};
+    document.getElementById('near').onclick=()=>distance=Math.max(3.8,distance-.55);
+    document.getElementById('far').onclick=()=>distance=Math.min(9,distance+.55);
+    document.getElementById('back').onclick=()=>{if(history.length>1)history.back();else location.href='./'};
+
+    canvas.addEventListener('pointerdown',e=>{drag=true;lastX=e.clientX;canvas.setPointerCapture?.(e.pointerId)});
+    canvas.addEventListener('pointermove',e=>{if(!drag)return;auto=false;angle+=(e.clientX-lastX)*.012;lastX=e.clientX;document.getElementById('auto').textContent='▶ Giro automático'});
+    const end=()=>drag=false;canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
+
+    window.addEventListener('keydown',e=>{
+      if(e.key==='ArrowLeft')angle-=.14;
+      if(e.key==='ArrowRight')angle+=.14;
+      if(e.key==='+'||e.key==='=')distance=Math.max(3.8,distance-.35);
+      if(e.key==='-'||e.key==='_')distance=Math.min(9,distance+.35);
+    });
+
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>
