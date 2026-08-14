@@ -18,13 +18,12 @@
   });
 })();
 
-/* v20.1 · Integración del Bebé Azul GLB.
-   Se carga aparte para no tocar el motor ni los demás personajes. */
+/* v20.3 · Integración Bebé Azul GLB con nombre nuevo para evitar caché. */
 (function(){
-  if(document.querySelector('script[data-lajuj-glb-model]'))return;
+  if(document.querySelector('script[data-lajuj-glb-model-v2]'))return;
   const s=document.createElement('script');
-  s.src='js/glb-model.js';
-  s.dataset.lajujGlbModel='1';
+  s.src='js/glb-model-v2.js';
+  s.dataset.lajujGlbModelV2='1';
   s.async=true;
   document.head.appendChild(s);
 })();
