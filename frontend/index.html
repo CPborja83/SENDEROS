@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#03070c">
+  <title>Senderos Lajuj 3D v19 · Demo Full-Stack 2 habitaciones</title>
+  <link rel="stylesheet" href="styles/theme.css">
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+  <div id="flash" class="flash"></div>
+
+  <section id="setup" class="setup-page">
+    <div class="setup-card">
+      <div class="logo">Senderos Lajuj · Demo Full-Stack 3D</div>
+      <h1>Área de prueba 3D · 2 habitaciones · multijugador real</h1>
+      <p class="lead">Esta versión concentra toda la jugabilidad en dos habitaciones y una pequeña red de calles para validar gráficos, controles, juegos en línea, radio, peligros, sombra, temporizador y multijugador antes de ampliar el mapa completo.</p>
+
+      <div class="form-grid">
+        <label class="field">Nombre<input id="name" maxlength="24" placeholder="Tu nombre"></label>
+        <label class="field">Edad<input id="age" type="number" min="5" max="99" inputmode="numeric" placeholder="12"></label>
+        <label class="field room-field">Código de sala<input id="room" maxlength="12" value="FAMILIA123"></label>
+      </div>
+
+
+      <div class="control-setup">
+        <div class="control-setup-head"><div><b>🎮 Controles antes de jugar</b><small>Este esquema controla Senderos Lajuj. Cada juego en línea muestra sus propios controles antes de activarse.</small></div><button id="controlsReset" type="button" class="btn compact">Restablecer</button></div>
+        <div class="mode-row"><label><input type="radio" name="controlMode" value="computer" checked> 💻 Computadora</label><label><input type="radio" name="controlMode" value="mobile"> 📱 Celular / tableta</label></div>
+        <div class="keyboard-config">
+          <span>Arriba <button type="button" class="key-bind" data-key-action="up"></button></span><span>Abajo <button type="button" class="key-bind" data-key-action="down"></button></span><span>Izquierda <button type="button" class="key-bind" data-key-action="left"></button></span><span>Derecha <button type="button" class="key-bind" data-key-action="right"></button></span><span>Acción <button type="button" class="key-bind" data-key-action="action"></button></span><span>Secundaria <button type="button" class="key-bind" data-key-action="secondary"></button></span><span>Salir <button type="button" class="key-bind" data-key-action="exit"></button></span>
+        </div>
+        <div class="touch-config"><b>Botones en pantalla (puedes cambiar lo que hace cada uno)</b><div class="touch-config-grid">
+          <label>▲ <select data-touch-slot="up"><option value="up">Arriba</option><option value="down">Abajo</option><option value="left">Izquierda</option><option value="right">Derecha</option><option value="action">Acción</option><option value="secondary">Secundaria</option><option value="exit">Salir</option></select></label>
+          <label>◀ <select data-touch-slot="left"><option value="left">Izquierda</option><option value="right">Derecha</option><option value="up">Arriba</option><option value="down">Abajo</option><option value="action">Acción</option><option value="secondary">Secundaria</option><option value="exit">Salir</option></select></label>
+          <label>▼ <select data-touch-slot="down"><option value="down">Abajo</option><option value="up">Arriba</option><option value="left">Izquierda</option><option value="right">Derecha</option><option value="action">Acción</option><option value="secondary">Secundaria</option><option value="exit">Salir</option></select></label>
+          <label>▶ <select data-touch-slot="right"><option value="right">Derecha</option><option value="left">Izquierda</option><option value="up">Arriba</option><option value="down">Abajo</option><option value="action">Acción</option><option value="secondary">Secundaria</option><option value="exit">Salir</option></select></label>
+          <label>A <select data-touch-slot="a"><option value="action">Acción</option><option value="secondary">Secundaria</option><option value="up">Arriba</option><option value="down">Abajo</option><option value="left">Izquierda</option><option value="right">Derecha</option><option value="exit">Salir</option></select></label>
+          <label>B <select data-touch-slot="b"><option value="secondary">Secundaria</option><option value="action">Acción</option><option value="exit">Salir</option><option value="up">Arriba</option><option value="down">Abajo</option><option value="left">Izquierda</option><option value="right">Derecha</option></select></label>
+          <label>☰ <select data-touch-slot="menu"><option value="exit">Salir</option><option value="secondary">Secundaria</option><option value="action">Acción</option><option value="up">Arriba</option><option value="down">Abajo</option><option value="left">Izquierda</option><option value="right">Derecha</option></select></label>
+        </div></div>
+        <div id="controlSummary" class="control-summary"></div>
+      </div>
+
+      <div class="select-label">Elige tu personaje. Su sombra queda emparejada automáticamente:</div>
+      <div id="characters" class="characters" aria-label="Selección de personajes"></div>
+      <div id="setupInfo" class="setup-info">Cargando personajes…</div>
+      <div id="bootError" class="boot-error" hidden></div>
+
+      <div class="actions">
+        <button id="start" class="btn primary" disabled>Entrar a la ciudad 3D</button>
+        <button id="random" class="btn">Personaje al azar</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="game" class="game-page" aria-hidden="true">
+    <canvas id="gameCanvas"></canvas>
+    <div class="fog-vignette" aria-hidden="true"></div>
+
+    <div class="hud left-column">
+      <div class="panel objective-panel">
+        <div class="panel-title">⭐ OBJETIVO</div>
+        <div id="objectiveText" class="objective-text">Encuentra 3 señales de claridad y llega al Templo antes de perder tu atención.</div>
+      </div>
+      <div class="panel family-panel">
+        <div class="family-head"><span>FAMILIA</span><span id="familyCount">1 conectado</span></div>
+        <div id="familyStrip" class="family-strip"></div>
+      </div>
+    </div>
+
+    <div id="guidePanel" class="hud panel guide-panel">
+      <div class="guide-row">
+        <div id="guideIcon" class="guide-icon">✨</div>
+        <div><div id="guideName" class="guide-name">El Espíritu</div><div id="guideText" class="guide-text">Escucha y observa las señales.</div></div>
+      </div>
+    </div>
+
+    <button id="leaveGame" class="leave-game" type="button" aria-label="Salir de la partida">⏻ <span>SALIR</span></button>
+
+    <div class="hud right-status">
+      <div class="panel clock-panel"><div>🕘 <span id="clock">00:00</span></div><small id="timePenaltyHint">−20% atención en 10:00</small></div>
+      <div class="panel meter-panel attention-meter">
+        <div class="meter-top"><span>❤️ ATENCIÓN</span><strong id="attention">100%</strong></div>
+        <div class="meter-bar"><i id="attentionFill"></i></div>
+      </div>
+      <div class="panel meter-panel spirit-meter">
+        <div class="meter-top"><span>🔊 VOZ DEL ESPÍRITU</span><strong id="spiritStrength">100%</strong></div>
+        <div class="meter-bar"><i id="spiritFill"></i></div>
+      </div>
+    </div>
+
+    <div class="right-rail">
+      <button id="listen" class="rail-button"><span>〽️</span><small>ESCUCHAR</small></button>
+      <button id="signal" class="rail-button signal"><span>✨</span><small>SEÑAL</small></button>
+      <button id="gather" class="rail-button gather"><span>👥</span><small>REUNIR</small></button>
+    </div>
+
+    <div class="mobile-controls" aria-label="Controles táctiles editables">
+      <div class="joystick">
+        <button class="joy up" data-touch-control="up">▲</button>
+        <button class="joy left" data-touch-control="left">◀</button>
+        <button class="joy down" data-touch-control="down">▼</button>
+        <button class="joy right" data-touch-control="right">▶</button>
+        <div class="joy-core"></div>
+      </div>
+      <div class="touch-actions">
+        <button class="touch-btn a" data-touch-control="a">A</button>
+        <button class="touch-btn b" data-touch-control="b">B</button>
+        <button class="touch-btn menu" data-touch-control="menu">☰</button>
+      </div>
+    </div>
+
+    <div class="quick-actions">
+      <button id="pray"><span>🙏</span><b>Oremos</b></button>
+      <button id="scripture"><span>📖</span><b>Leamos las Escrituras</b></button>
+      <button id="together"><span>👥</span><b>Estamos juntos</b></button>
+      <button id="trust"><span>❤️</span><b>Confío en el Señor</b></button>
+    </div>
+
+    <div class="hud panel minimap-panel">
+      <div class="minimap-legend"><span>● familia</span><span>◆ sombra</span></div>
+      <canvas id="minimap"></canvas>
+      <div class="map-zoom"><button id="mapPlus">+</button><button id="mapMinus">−</button></div>
+    </div>
+
+    <div id="location" class="hud panel location-tag">CALLE CENTRAL</div>
+    <div id="teamBanner" class="hud panel team-banner"></div>
+    <div id="streetAlert" class="hud panel street-alert"></div>
+    <div class="audio-buttons"><button id="voiceBtn" class="btn compact">🔊 Voz</button><button id="musicBtn" class="btn compact">🎵 Música</button></div>
+    <div id="radioNowBar" class="radio-now-bar"><span>📻</span><div><b id="radioNowName">Sin emisora</b><small id="radioNowState"></small></div><button id="radioNowToggle" type="button" title="Pausar/reanudar">⏸</button><button id="radioNowStop" type="button" title="Apagar emisora">✕</button></div>
+  </section>
+<div id="mediaModal" class="modal"><div class="modal-card media-card">
+    <span class="tag">📻 Música y radio dentro del juego</span><h2 id="mediaTitle"></h2><p id="mediaText"></p>
+    <div class="media-head"><div id="mediaIcon" class="big-icon">📻</div><div><b id="mediaNow">Elige una emisora</b><div class="media-volume"><button id="mediaMute" class="btn compact">🔊 Silenciar</button><input id="mediaVolume" type="range" min="0" max="100" value="22"><span id="mediaVolumeValue">22%</span></div></div></div>
+    <div id="mediaList" class="media-list"></div>
+    <div class="actions modal-actions"><button id="mediaClose" class="btn primary">Cerrar y seguir escuchando</button></div>
+  </div></div>
+<div id="webGameModal" class="modal"><div class="modal-card webgame-card">
+    <span class="tag">🕹️ Juego en línea</span><h2 id="webGameTitle">Juego</h2><p id="webGameMeta"></p>
+    <div id="webGameControls" class="control-help"></div>
+    <div class="webgame-wrap"><iframe id="webGameFrame" title="Juego web gratuito" allow="autoplay; fullscreen; gamepad" referrerpolicy="no-referrer"></iframe><div id="webGameStartCover" class="webgame-start-cover"><button id="webGameActivate" class="btn primary">▶ ACTIVAR JUEGO</button><small>Haz clic aquí o presiona Enter. Después usa las teclas indicadas arriba.</small></div></div>
+    <div class="actions modal-actions"><button id="webGameClose" class="btn primary">Salir del arcade</button><button id="webGameSource" class="btn">Página del autor</button></div>
+    <p class="media-note">Los juegos se cargan desde sus proveedores/autores. El tiempo de partida sigue avanzando mientras juegas.</p>
+  </div></div>
+
+  <div id="timeDanger" class="time-danger" aria-live="assertive"><div class="time-danger-core"><strong>⚠️ EL TIEMPO AVANZA</strong><span id="timeDangerText">10 MINUTOS · −20% ATENCIÓN</span><small>Recuerda tu objetivo. Continúa.</small></div></div>
+
+  <div id="jailModal" class="modal"><div class="modal-card centered">
+    <div class="big-icon">⛓️🚪⛓️</div><h2>¡Tu sombra te encarceló!</h2>
+    <p>Tu círculo aparece rojo en el mini‑mapa de toda tu familia.</p>
+    <div id="jailCount" class="countdown">50</div><button id="sosVoice" class="btn primary">📣 Pedir auxilio</button>
+  </div></div>
+
+  <div id="templeModal" class="modal"><div class="modal-card centered">
+    <div class="big-icon celestial">✨🏛️✨</div><h2>Entraste en la gran luz</h2><p id="templeText"></p><div id="familyGrid" class="family-grid"></div>
+  </div></div>
+
+  <div id="finalModal" class="modal"><div class="modal-card centered">
+    <div class="big-icon celestial">🌟🏛️🌟</div><h2>¡Toda la familia llegó!</h2><p>La partida terminó para toda la sala.</p><div id="finalFamily" class="family-grid"></div>
+    <div class="actions modal-actions"><button id="playAgain" class="btn primary">Nueva partida familiar</button></div>
+  </div></div>
+
+  <script src="runtime-config.js"></script>
+  <script defer src="js/config.js"></script>
+  <script defer src="js/utils.js"></script>
+  <script defer src="js/controls.js"></script>
+  <script defer src="js/content.js"></script>
+  <script defer src="js/ui.js"></script>
+  <script defer src="js/world.js"></script>
+  <script defer src="js/webgl-engine.js"></script>
+  <script defer src="js/avatar3d.js"></script>
+  <script defer src="js/temple3d.js"></script>
+  <script defer src="js/renderer3d.js"></script>
+  <script defer src="js/audio.js"></script>
+  <script defer src="js/media-center.js"></script>
+  <script defer src="js/external-games.js"></script>
+  <script defer src="js/street-events.js"></script>
+  <script defer src="js/multiplayer.js"></script>
+  <script defer src="js/game.js"></script>
+  <script defer src="js/main.js"></script>
+</body>
+</html>

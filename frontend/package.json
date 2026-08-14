@@ -1,0 +1,15 @@
+{
+  "name": "senderos-lajuj-frontend",
+  "private": true,
+  "version": "19.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "prebuild": "node scripts/write-runtime-config.mjs",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173"
+  },
+  "devDependencies": {
+    "vite": "^7.1.2"
+  }
+}

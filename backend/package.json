@@ -1,0 +1,14 @@
+{
+  "name": "senderos-lajuj-backend",
+  "private": true,
+  "version": "19.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  }
+}

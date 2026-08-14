@@ -1,0 +1,5 @@
+:root{
+  --bg:#03070c;--text:#f7fbff;--muted:#a9bfd0;--gold:#ffd35d;--cyan:#54ccff;
+  --green:#5fd69b;--red:#ff5267;--violet:#b966ff;--panel:rgba(3,11,20,.9);
+  --line:rgba(107,190,255,.26);--shadow:0 18px 55px rgba(0,0,0,.46)
+}
