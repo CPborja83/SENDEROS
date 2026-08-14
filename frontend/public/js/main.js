@@ -17,3 +17,14 @@
     window.addEventListener('beforeunload',()=>L.Game.state&&L.Multiplayer.disconnect(L.Game.state));
   });
 })();
+
+/* v20.1 · Integración del Bebé Azul GLB.
+   Se carga aparte para no tocar el motor ni los demás personajes. */
+(function(){
+  if(document.querySelector('script[data-lajuj-glb-model]'))return;
+  const s=document.createElement('script');
+  s.src='js/glb-model.js';
+  s.dataset.lajujGlbModel='1';
+  s.async=true;
+  document.head.appendChild(s);
+})();
