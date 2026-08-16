@@ -4,48 +4,42 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="theme-color" content="#071528">
-  <title>Senderos Lajuj · PRUEBA · Bebé Azul Animado v2</title>
+  <title>Senderos Lajuj · PRUEBA · Bebé Azul Animado v3</title>
   <style>
     *{box-sizing:border-box}
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#071528;color:#fff;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
     #renderCanvas{width:100%;height:100%;display:block;touch-action:none;outline:none}
     .topbar{position:fixed;z-index:8;left:12px;right:12px;top:10px;display:flex;justify-content:space-between;gap:12px;pointer-events:none}
-    .card{pointer-events:auto;background:rgba(5,16,30,.85);border:1px solid rgba(115,210,255,.28);box-shadow:0 12px 34px rgba(0,0,0,.36),inset 0 1px rgba(255,255,255,.05);backdrop-filter:blur(12px);border-radius:16px;padding:10px 12px}
-    .brand{font-size:16px;font-weight:950;letter-spacing:.03em}.sub{font-size:12px;color:#b9e8ff;margin-top:4px;line-height:1.35}.status{font-size:12px;font-weight:800;color:#9cf7b2;margin-top:6px}.status.error{color:#ffaaa4}
-    .stats{text-align:right;min-width:160px}.stats b{display:block;font-size:12px}.stats span{font-size:11px;color:#b9e8ff}
-    .legend{position:fixed;z-index:8;left:12px;bottom:12px;pointer-events:none}.legend .card{font-size:12px;line-height:1.55}.legend strong{color:#76e8ff}
-    .back{position:fixed;z-index:10;right:14px;bottom:14px;text-decoration:none;color:white;font-weight:900;background:rgba(12,49,75,.92);border:1px solid rgba(115,210,255,.38);border-radius:14px;padding:12px 15px;box-shadow:0 8px 24px rgba(0,0,0,.30)}
+    .card{pointer-events:auto;background:rgba(5,16,30,.86);border:1px solid rgba(115,210,255,.28);box-shadow:0 12px 34px rgba(0,0,0,.36);backdrop-filter:blur(12px);border-radius:16px;padding:10px 12px}
+    .brand{font-size:16px;font-weight:950}.sub{font-size:11px;color:#b9e8ff;margin-top:3px}.status{font-size:11px;font-weight:800;color:#9cf7b2;margin-top:5px}.status.error{color:#ffaaa4}
+    .stats{text-align:right;min-width:150px}.stats b{display:block;font-size:12px}.stats span{font-size:10px;color:#b9e8ff}
+    .legend{position:fixed;z-index:8;left:12px;bottom:12px;pointer-events:none}.legend .card{font-size:11px;line-height:1.5}.legend strong{color:#76e8ff}
+    .back{position:fixed;z-index:10;right:14px;bottom:14px;text-decoration:none;color:#fff;font-weight:900;background:rgba(12,49,75,.92);border:1px solid rgba(115,210,255,.38);border-radius:14px;padding:12px 15px}
     .mobile{display:none;position:fixed;z-index:9;left:12px;right:12px;bottom:12px;justify-content:space-between;align-items:end;pointer-events:none}
     .pad,.actions{pointer-events:auto}.pad{display:grid;grid-template:50px 50px 50px/50px 50px 50px;gap:5px}
-    .pad button,.actions button{border:1px solid rgba(255,255,255,.28);background:rgba(8,23,39,.86);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3);backdrop-filter:blur(9px);font-weight:900;touch-action:none}
+    .pad button,.actions button{border:1px solid rgba(255,255,255,.28);background:rgba(8,23,39,.88);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.3);font-weight:900;touch-action:none}
     .pad button{border-radius:14px;font-size:18px}.pad .up{grid-column:2}.pad .left{grid-column:1;grid-row:2}.pad .down{grid-column:2;grid-row:2}.pad .right{grid-column:3;grid-row:2}
-    .actions{display:flex;gap:8px}.actions button{width:66px;height:66px;border-radius:50%;font-size:11px;background:rgba(248,189,58,.78)}
+    .actions button{width:66px;height:66px;border-radius:50%;font-size:11px;background:rgba(248,189,58,.82)}
     .loading{position:fixed;z-index:20;inset:0;display:grid;place-items:center;background:#06111f}.loading.hidden{display:none}
-    .loading .box{background:#0b2032;border:1px solid #39759a;border-radius:18px;padding:22px 26px;text-align:center;max-width:86vw}
-    .loading strong{display:block;font-size:18px;margin-bottom:6px}.loading span{font-size:12px;color:#b9e8ff}
-    @media(max-width:820px),(pointer:coarse){
-      .mobile{display:flex}.legend{display:none}.back{right:12px;bottom:95px}
-      .topbar{left:8px;right:8px;top:8px}.card{padding:9px 10px}.brand{font-size:14px}.sub{font-size:10px}.stats{display:none}
-    }
+    .loading .box{background:#0b2032;border:1px solid #39759a;border-radius:18px;padding:22px 26px;text-align:center}.loading strong{display:block;font-size:18px;margin-bottom:6px}.loading span{font-size:12px;color:#b9e8ff}
+    @media(max-width:820px),(pointer:coarse){.mobile{display:flex}.legend{display:none}.back{right:12px;bottom:95px}.topbar{left:8px;right:8px;top:8px}.card{padding:8px 9px}.brand{font-size:13px}.sub{font-size:9px}.stats{display:none}}
   </style>
 </head>
 <body>
   <canvas id="renderCanvas"></canvas>
 
-  <div id="loading" class="loading">
-    <div class="box"><strong>👶 Preparando Bebé Azul</strong><span id="loadingText">Cargando personaje animado…</span></div>
-  </div>
+  <div id="loading" class="loading"><div class="box"><strong>👶 Corrigiendo orientación</strong><span id="loadingText">Analizando ejes y animaciones…</span></div></div>
 
   <div class="topbar">
     <div class="card">
-      <div class="brand">🧪 PRUEBA · BEBÉ AZUL ANIMADO v2</div>
-      <div class="sub">Orientación corregida · lateral lento · cámara centrada.</div>
-      <div id="status" class="status">Cargando modelo animado…</div>
+      <div class="brand">🧪 PRUEBA · BEBÉ AZUL ANIMADO v3</div>
+      <div class="sub">Corrección automática de ejes + animación sin desplazamiento interno.</div>
+      <div id="status" class="status">Cargando…</div>
     </div>
-    <div class="card stats"><b id="fps">-- FPS</b><span>WASD o flechas · Shift para correr</span></div>
+    <div class="card stats"><b id="fps">-- FPS</b><span>Flechas/WASD · Shift correr</span></div>
   </div>
 
-  <div class="legend"><div class="card"><strong>Mover:</strong> WASD o flechas<br><strong>Correr:</strong> Shift<br><strong>Esta prueba:</strong> validar orientación, cámara y velocidad.</div></div>
+  <div class="legend"><div class="card"><strong>Objetivo:</strong> bebé de pie, piernas animadas y movimiento controlado.</div></div>
 
   <div class="mobile">
     <div class="pad">
@@ -61,6 +55,6 @@
 
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
   <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-  <script src="js/model-test-bebe-animado-v2.js"></script>
+  <script src="js/model-test-bebe-animado-v3.js"></script>
 </body>
 </html>
