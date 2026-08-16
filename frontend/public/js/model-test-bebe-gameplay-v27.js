@@ -1,0 +1,2536 @@
+(() => {
+'use strict';
+
+const B=window.BABYLON;
+const statusEl=document.getElementById('status');
+const loadingEl=document.getElementById('loading');
+const loadingText=document.getElementById('loadingText');
+
+function setStatus(msg,error=false){
+  statusEl.textContent=msg;
+  statusEl.classList.toggle('error',error);
+  loadingText.textContent=msg;
+}
+if(!B){setStatus('No cargó Babylon.js.',true);return;}
+
+const canvas=document.getElementById('renderCanvas');
+const engine=new B.Engine(canvas,true,{antialias:true,stencil:true,powerPreference:'high-performance'});
+engine.setHardwareScalingLevel(1/Math.min(devicePixelRatio||1,1.25));
+
+const scene=new B.Scene(engine);
+scene.skipPointerMovePicking=true;
+scene.autoClear=true;
+scene.autoClearDepthAndStencil=true;
+scene.clearColor=B.Color4.FromHexString('#071528ff');
+scene.fogMode=B.Scene.FOGMODE_LINEAR;
+scene.fogColor=B.Color3.FromHexString('#293743');
+scene.fogStart=2.6;
+scene.fogEnd=10.5;
+scene.imageProcessingConfiguration.contrast=1.12;
+scene.imageProcessingConfiguration.exposure=1.02;
+scene.imageProcessingConfiguration.toneMappingEnabled=true;
+scene.imageProcessingConfiguration.toneMappingType=B.ImageProcessingConfiguration.TONEMAPPING_ACES;
+
+const hemi=new B.HemisphericLight('hemi',new B.Vector3(-.2,1,.15),scene);hemi.intensity=.88;
+const sun=new B.DirectionalLight('sun',new B.Vector3(-.55,-1,-.45),scene);sun.position=new B.Vector3(16,28,18);sun.intensity=1.38;
+const shadows=new B.ShadowGenerator(768,sun);shadows.usePercentageCloserFiltering=true;shadows.filteringQuality=B.ShadowGenerator.QUALITY_LOW;
+
+function mat(name,hex,rough=.8,emissive=null){
+  const m=new B.PBRMaterial(name,scene);m.albedoColor=B.Color3.FromHexString(hex);m.roughness=rough;
+  if(emissive)m.emissiveColor=B.Color3.FromHexString(emissive);return m;
+}
+const mats={
+  road:mat('road','#607d91',.95),sidewalk:mat('sidewalk','#c8d5db',.9),line:mat('line','#ffe875',.7,'#6b5400'),
+  grass:mat('grass','#4c9b5d',.95),wall1:mat('wall1','#4f7898',.85),wall2:mat('wall2','#775c91',.85),
+  wall3:mat('wall3','#b96e5a',.85),window:mat('window','#74d8ff',.35,'#103b52'),
+  lamp:mat('lamp','#ffe69b',.4,'#e0b928'),pole:mat('pole','#34495d',.6),
+  trunk:mat('trunk','#7b563b',.9),leaves:mat('leaves','#3b9050',.9),goal:mat('goal','#ffe276',.4,'#ffcf32'),
+  wood:mat('wood','#8b6345',.88),metal:mat('metal','#53677a',.55),dark:mat('dark','#1f3445',.72),
+  orange:mat('orange','#f29b38',.65,'#5a2a00'),red:mat('red','#c94f4f',.72),blueSign:mat('blueSign','#3f8fc1',.58),
+  planter:mat('planter','#765b47',.9),flower:mat('flower','#e36f9f',.82),boxMat:mat('boxMat','#9a754d',.92),
+  spirit:mat('spirit','#8cecff',.25,'#58d9ff'),shadow:mat('shadow','#0b1018',.72,'#020407'),
+  station:mat('station','#7d68c9',.42,'#302261'),
+  consoleBody:mat('consoleBody','#343f4b',.64),consoleTrim:mat('consoleTrim','#1b242c',.62),
+  consoleScreen:mat('consoleScreen','#0d748e',.22,'#3ac9ee'),shadowEye:mat('shadowEye','#c51f2c',.22,'#ff2338'),
+  leaves2:mat('leaves2','#2d7945',.90),leaves3:mat('leaves3','#65aa55',.88),
+  roof:mat('roof','#344653',.84),door:mat('door','#5f4031',.86),awning:mat('awning','#d2775b',.72),
+  question:mat('question','#2f6f96',.62,'#12384d'),stormGround:mat('stormGround','#26343e',.96),
+  floorBlue:mat('floorBlue','#63889b',.90),floorGreen:mat('floorGreen','#5f8978',.90),
+  floorPurple:mat('floorPurple','#756d91',.90),counter:mat('counter','#b8c2c8',.72),
+  monitor:mat('monitor','#113a49',.26,'#2aa4c0'),paper:mat('paper','#e7e2c9',.88),
+  mattress:mat('mattress','#6d86a5',.84),locker:mat('locker','#65747c',.76),
+  synthetic:mat('synthetic','#2f8d57',.93),court:mat('court','#b56c49',.90),
+  courtLine:mat('courtLine','#edf4ef',.84,'#222b25'),pew:mat('pew','#805b3c',.88),
+  book:mat('book','#9b5b4c',.86),book2:mat('book2','#456f93',.86),
+  medical:mat('medical','#d5e2e4',.72),neonatal:mat('neonatal','#7bc4d9',.64),
+  surgery:mat('surgery','#5ca48d',.70),dental:mat('dental','#77b6c7',.70),
+  puddle:mat('puddle','#315d74',.18,'#163d50')
+};
+
+// Nubes de tormenta suaves: gradiente radial, sin contornos geométricos.
+const cloudTex=new B.DynamicTexture('cloudSoftTex',{width:128,height:128},scene,false);
+const cctx=cloudTex.getContext();
+const cg=cctx.createRadialGradient(64,64,8,64,64,62);
+cg.addColorStop(0,'rgba(230,238,244,0.95)');
+cg.addColorStop(.35,'rgba(185,198,208,0.86)');
+cg.addColorStop(.70,'rgba(110,128,142,0.55)');
+cg.addColorStop(1,'rgba(45,58,68,0.0)');
+cctx.clearRect(0,0,128,128);
+cctx.fillStyle=cg;
+cctx.fillRect(0,0,128,128);
+cloudTex.update();
+
+function makeCloudMat(name,tint,alpha){
+  const m=new B.StandardMaterial(name,scene);
+  m.diffuseColor=B.Color3.FromHexString(tint);
+  m.emissiveColor=B.Color3.FromHexString('#2a3540');
+  m.opacityTexture=cloudTex;
+  m.diffuseTexture=cloudTex;
+  m.useAlphaFromDiffuseTexture=true;
+  m.alpha=alpha;
+  m.backFaceCulling=false;
+  m.disableLighting=false;
+  m.specularColor=new B.Color3(0,0,0);
+  return m;
+}
+const cloudDark=makeCloudMat('cloudDark','#56636d',.88);
+const cloudMid=makeCloudMat('cloudMid','#75838e',.80);
+const cloudLight=makeCloudMat('cloudLight','#a9b6bf',.70);
+
+function cartoonize(mesh,width=1.25,alpha=.58){
+  // Los contornos son costosos. En v22 solo se aplican a arquitectura,
+  // muebles y objetos relevantes; calle, césped y elementos menores no los necesitan.
+  const n=(mesh.name||'').toLowerCase();
+  const important=/(room|hospital|church|library|dentist|house|wall|back|front|side|bed|desk|table|counter|arcade|pew|pulpit|shelf|cabinet|monitor|screen|court|goal|basket|soccer|destination|door|awning|building|chair|stool|lamp|sink|tray|tooth|xray|dental|tool|bench)/.test(n);
+  if(important){
+    try{
+      mesh.enableEdgesRendering(.995);
+      mesh.edgesWidth=width;
+      mesh.edgesColor=new B.Color4(.025,.045,.060,alpha);
+    }catch(_){}
+  }
+  return mesh;
+}
+function box(name,w,h,d,x,y,z,m){
+  const q=B.MeshBuilder.CreateBox(name,{width:w,height:h,depth:d},scene);
+  q.position.set(x,y,z);q.material=m;q.receiveShadows=true;
+  return cartoonize(q,1.15,.48);
+}
+function cyl(name,d,h,x,y,z,m){
+  const q=B.MeshBuilder.CreateCylinder(name,{diameter:d,height:h,tessellation:14},scene);
+  q.position.set(x,y,z);q.material=m;q.receiveShadows=true;
+  return cartoonize(q,1.15,.48);
+}
+function sphere(name,d,x,y,z,m){
+  const q=B.MeshBuilder.CreateIcoSphere(name,{radius:d/2,subdivisions:2,flat:false},scene);
+  q.position.set(x,y,z);q.material=m;q.receiveShadows=true;
+  return cartoonize(q,1.05,.42);
+}
+
+function makeGroundLabel(text,x,z,w=4.0,h=.72,bg='#153449',fg='#f3fbff',font=42){
+  const tex=new B.DynamicTexture('LabelTex'+Math.random(),{width:512,height:128},scene,false);
+  const ctx=tex.getContext();
+  ctx.clearRect(0,0,512,128);
+  ctx.fillStyle=bg;ctx.fillRect(3,3,506,122);
+  ctx.strokeStyle='rgba(225,245,255,.65)';ctx.lineWidth=5;ctx.strokeRect(5,5,502,118);
+  ctx.fillStyle=fg;ctx.font=`bold ${font}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';
+
+  const words=text.split(' ');
+  let lines=[text];
+  if(text.length>23){
+    const half=Math.ceil(words.length/2);
+    lines=[words.slice(0,half).join(' '),words.slice(half).join(' ')];
+  }
+  if(lines.length===1)ctx.fillText(lines[0],256,64);
+  else{
+    ctx.font=`bold ${Math.max(27,font-8)}px Arial`;
+    ctx.fillText(lines[0],256,43);ctx.fillText(lines[1],256,87);
+  }
+  tex.update();
+
+  const material=new B.StandardMaterial('LabelMat'+Math.random(),scene);
+  material.diffuseTexture=tex;material.emissiveTexture=tex;material.specularColor=new B.Color3(0,0,0);
+  const p=B.MeshBuilder.CreatePlane('GroundLabel',{width:w,height:h,sideOrientation:B.Mesh.DOUBLESIDE},scene);
+  p.position.set(x,.205,z);p.rotation.x=Math.PI/2;p.material=material;p.isPickable=false;
+  return p;
+}
+
+function openShell(name,x,z,w,d,wallMat,floorMat,entryGap=1.7){
+  const wallH=1.62,t=.16;
+  box(name+'Floor',w,.15,d,x,.075,z,floorMat);
+  registerFloor(name,x,z,w,d,.15);
+
+  // Entrada en la pared que mira hacia la calle central.
+  const towardRoad=x<0?1:-1;
+  const frontX=x+towardRoad*(w/2-t/2);
+  const backX=x-towardRoad*(w/2-t/2);
+
+  const back=box(name+'Back',t,wallH,d,backX,wallH/2,z,wallMat);
+  const sideA=box(name+'SideA',w,wallH,t,x,wallH/2,z-d/2+t/2,wallMat);
+  const sideB=box(name+'SideB',w,wallH,t,x,wallH/2,z+d/2-t/2,wallMat);
+
+  const seg=(d-entryGap)/2;
+  const f1=box(name+'FrontA',t,wallH,seg,frontX,wallH/2,z-(entryGap/2+seg/2),wallMat);
+  const f2=box(name+'FrontB',t,wallH,seg,frontX,wallH/2,z+(entryGap/2+seg/2),wallMat);
+  [back,sideA,sideB,f1,f2].forEach(o=>shadows.addShadowCaster(o));
+
+  addCollider(name+' pared',backX,z,t+.07,d,.02);
+  addCollider(name+' pared',x,z-d/2+t/2,w,t+.07,.02);
+  addCollider(name+' pared',x,z+d/2-t/2,w,t+.07,.02);
+  addCollider(name+' fachada',frontX,z-(entryGap/2+seg/2),t+.07,seg,.02);
+  addCollider(name+' fachada',frontX,z+(entryGap/2+seg/2),t+.07,seg,.02);
+
+  return {name,x,z,w,d,wallH,t,towardRoad,frontX,backX};
+}
+
+function wallX(name,x,z,w,wallMat,gapCenter=null,gap=1.1){
+  const t=.14,h=1.42;
+  if(gapCenter===null){
+    box(name,w,h,t,x,h/2,z,wallMat);addCollider(name,x,z,w,t+.05,.02);return;
+  }
+  const left=(gapCenter-gap/2)-(x-w/2);
+  const right=(x+w/2)-(gapCenter+gap/2);
+  if(left>.05){
+    const cx=x-w/2+left/2;box(name+'L',left,h,t,cx,h/2,z,wallMat);addCollider(name+'L',cx,z,left,t+.05,.02);
+  }
+  if(right>.05){
+    const cx=gapCenter+gap/2+right/2;box(name+'R',right,h,t,cx,h/2,z,wallMat);addCollider(name+'R',cx,z,right,t+.05,.02);
+  }
+}
+function wallZ(name,x,z,d,wallMat,gapCenter=null,gap=1.1){
+  const t=.14,h=1.42;
+  if(gapCenter===null){
+    box(name,t,h,d,x,h/2,z,wallMat);addCollider(name,x,z,t+.05,d,.02);return;
+  }
+  const low=(gapCenter-gap/2)-(z-d/2);
+  const high=(z+d/2)-(gapCenter+gap/2);
+  if(low>.05){
+    const cz=z-d/2+low/2;box(name+'A',t,h,low,x,h/2,cz,wallMat);addCollider(name+'A',x,cz,t+.05,low,.02);
+  }
+  if(high>.05){
+    const cz=gapCenter+gap/2+high/2;box(name+'B',t,h,high,x,h/2,cz,wallMat);addCollider(name+'B',x,cz,t+.05,high,.02);
+  }
+}
+
+function simpleBed(x,z){
+  const bed=box('Bed',1.48,.30,.78,x,.30,z,mats.mattress);
+  const pillow=box('Pillow',.45,.13,.48,x,.52,z+.22,mats.sidewalk);
+  shadows.addShadowCaster(bed);shadows.addShadowCaster(pillow);
+  addCollider('cama',x,z,1.58,.88,.03);
+}
+function simpleDesk(x,z){
+  const desk=box('Desk',1.25,.15,.65,x,.73,z,mats.wood);
+  const screen=box('Screen',.48,.34,.08,x,.98,z-.12,mats.monitor);
+  const chair=cyl('Chair',.44,.40,x,.26,z+.62,mats.dark);
+  [desk,screen,chair].forEach(o=>shadows.addShadowCaster(o));
+  addCollider('escritorio',x,z,1.35,.75,.03);
+}
+
+function shrubCluster(x,z,s=1){
+  const a=sphere('shrubA',.76*s,x,.32,z,mats.leaves2);
+  const b=sphere('shrubB',.58*s,x-.22*s,.28,z+.14*s,mats.leaves);
+  const c=sphere('shrubC',.54*s,x+.21*s,.26,z-.14*s,mats.leaves3);
+  [a,b,c].forEach(o=>{o.scaling.y*=.70;shadows.addShadowCaster(o);});
+}
+function addFrontYard(shell,depth=1.15,count=4){
+  const dir=shell.towardRoad;
+  const yardX=shell.x+dir*(shell.w/2+depth/2-.04);
+  box(shell.name+'FrontYard',depth,.05,Math.max(2.4,shell.d-.9),yardX,.03,shell.z,mats.grass);
+  for(let i=0;i<count;i++){
+    const frac=(i/(Math.max(1,count-1))-.5);
+    shrubCluster(yardX+dir*(Math.random()*.18-.09),shell.z+frac*(shell.d-1.8)+(Math.random()-.5)*.28,.74+Math.random()*.18);
+  }
+}
+
+
+// Colisiones 2D (X/Z). El personaje se mueve manualmente, así que hacemos
+// resolución por ejes para permitir deslizarse alrededor de obstáculos.
+const colliders=[];
+const facilityFloors=[];
+const activityZones=[];
+const distractionZones=[];
+const hazardZones=[];
+const PLAYER_RADIUS=.31;
+
+function registerFloor(name,x,z,w,d,y=.15){
+  facilityFloors.push({name,x,z,hw:w/2,hd:d/2,y});
+}
+function registerActivity(type,name,x,z,r=1.35){
+  activityZones.push({type,name,x,z,r,done:false});
+}
+function registerDistraction(name,x,z,r=1.25,rate=.65){
+  distractionZones.push({name,x,z,r,rate,time:0,active:true});
+}
+function addCollider(name,x,z,w,d,pad=0){
+  colliders.push({name,x,z,hw:w/2+pad,hd:d/2+pad});
+}
+function circleHitsAABB(x,z,r,c){
+  const cx=Math.max(c.x-c.hw,Math.min(x,c.x+c.hw));
+  const cz=Math.max(c.z-c.hd,Math.min(z,c.z+c.hd));
+  const dx=x-cx,dz=z-cz;
+  return dx*dx+dz*dz < r*r;
+}
+function blockedAt(x,z){
+  return colliders.some(c=>circleHitsAABB(x,z,PLAYER_RADIUS,c));
+}
+
+// Escenario v15
+// Base urbana amplia para que la cámara alta nunca muestre vacío fuera del mapa.
+box('worldBase',62,.10,82,0,-.18,-18,mats.stormGround);
+
+// La calle principal conserva el ancho aprobado.
+const ROAD_W=4.35;
+const WALK_W=1.95;
+const ROAD_EDGE=ROAD_W/2;
+const WALK_CENTER=ROAD_EDGE+WALK_W/2;
+
+// Alturas físicas de las superficies.
+const ROAD_SURFACE_Y=0.0;
+const SIDEWALK_SURFACE_Y=0.15;
+const CURB_SURFACE_Y=0.22;
+
+box('road',ROAD_W,.18,74,0,-.09,-17,mats.road);
+box('walkL',WALK_W,.28,74,-WALK_CENTER,.01,-17,mats.sidewalk);
+box('walkR',WALK_W,.28,74, WALK_CENTER,.01,-17,mats.sidewalk);
+
+// Bordillos para que se perciba mejor el límite de la calle.
+box('curbL',.20,.34,74,-ROAD_EDGE,.05,-17,mats.sidewalk);
+box('curbR',.20,.34,74, ROAD_EDGE,.05,-17,mats.sidewalk);
+
+// Franjas pequeñas de área verde detrás de las banquetas.
+box('grassL',5.0,.18,74,-8.4,-.03,-17,mats.grass);
+box('grassR',5.0,.18,74, 8.4,-.03,-17,mats.grass);
+
+// Línea central ligeramente más pequeña para la nueva escala.
+for(let z=-54;z<=22;z+=4.1)box('line'+z,.14,.03,1.75,0,.035,z,mats.line);
+
+// Calles transversales: hacen que el mapa se lea como 6 cuadras desde la vista alta.
+const CROSS_STREETS=[18,8,-2,-12,-22,-32,-42,-52];
+CROSS_STREETS.forEach((z,i)=>{
+  box('crossRoad'+i,52,.12,2.05,0,-.105,z,mats.road);
+
+  // Cruce peatonal en ambos lados de la intersección.
+  for(let s=-2;s<=2;s++){
+    const stripe=box('crossStripe'+i+'_'+s,.34,.025,1.65,s*.60,.075,z,mats.sidewalk);
+    stripe.material.alpha=.90;
+  }
+});
+
+let roomSerial=0;
+
+function roomObjectCollider(name,x,z,w,d){
+  addCollider(name,x,z,w,d,.035);
+}
+
+function furnishRoom(type,x,z,roadDir,w,d){
+  // roadDir apunta desde el edificio hacia la calle.
+  const backX=x-roadDir*(w*.23);
+
+  if(type===0){ // oficina
+    const desk=box('OfficeDesk',1.35,.16,.68,backX,.72,z-.35,mats.wood);
+    const chair=cyl('OfficeChair',.48,.42,backX+roadDir*.12,.30,z+.35,mats.dark);
+    const mon=box('OfficeMonitor',.52,.38,.10,backX-roadDir*.20,1.02,z-.35,mats.monitor);
+    const papers=box('OfficePapers',.42,.035,.28,backX+roadDir*.28,.83,z-.28,mats.paper);
+    const cab=box('OfficeCabinet',.46,1.25,.55,x-roadDir*(w*.40),.63,z+d*.28,mats.locker);
+    [desk,chair,mon,papers,cab].forEach(o=>shadows.addShadowCaster(o));
+    roomObjectCollider('escritorio',backX,z-.35,1.45,.78);
+    roomObjectCollider('archivador',x-roadDir*(w*.40),z+d*.28,.56,.64);
+  }
+  else if(type===1){ // dormitorio
+    const bed=box('RoomBed',1.55,.30,.78,x-roadDir*.45,.30,z+d*.18,mats.mattress);
+    const pillow=box('RoomPillow',.48,.14,.50,x-roadDir*.45,.52,z+d*.18,mats.sidewalk);
+    const locker=box('RoomLocker',.55,1.18,.52,x-roadDir*(w*.38),.60,z-d*.27,mats.locker);
+    const table=box('RoomNightTable',.48,.48,.48,x+roadDir*.50,.24,z+d*.18,mats.wood);
+    [bed,pillow,locker,table].forEach(o=>shadows.addShadowCaster(o));
+    roomObjectCollider('cama',x-roadDir*.45,z+d*.18,1.65,.88);
+    roomObjectCollider('locker',x-roadDir*(w*.38),z-d*.27,.62,.60);
+  }
+  else if(type===2){ // laboratorio / clínica
+    const counter=box('LabCounter',1.65,.72,.52,x-roadDir*(w*.32),.36,z-d*.25,mats.counter);
+    const table=box('LabTable',1.35,.14,.72,x+roadDir*.20,.76,z+.25,mats.counter);
+    const screen=box('LabScreen',.58,.42,.08,x-roadDir*(w*.34),1.05,z-d*.25,mats.monitor);
+    const stool=cyl('LabStool',.46,.42,x+roadDir*.30,.28,z-.45,mats.dark);
+    [counter,table,screen,stool].forEach(o=>shadows.addShadowCaster(o));
+    roomObjectCollider('mesón',x-roadDir*(w*.32),z-d*.25,1.75,.62);
+    roomObjectCollider('mesa laboratorio',x+roadDir*.20,z+.25,1.45,.82);
+  }
+  else if(type===3){ // comedor
+    const table=cyl('DiningTable',1.32,.13,x,.72,z,mats.wood);
+    shadows.addShadowCaster(table);
+    [[-.82,0],[.82,0],[0,-.82],[0,.82]].forEach((p,i)=>{
+      const stool=cyl('DiningStool'+i,.40,.42,x+p[0],.27,z+p[1],mats.dark);
+      shadows.addShadowCaster(stool);
+    });
+    roomObjectCollider('mesa comedor',x,z,1.42,1.42);
+  }
+  else if(type===4){ // arcade
+    for(let i=-1;i<=1;i++){
+      const ax=x-roadDir*(w*.28);
+      const az=z+i*.92;
+      const body=box('RoomArcadeBody',.76,1.28,.62,ax,.64,az,mats.consoleBody);
+      const screen=box('RoomArcadeScreen',.54,.38,.045,ax+roadDir*.325,1.00,az,mats.monitor);
+      const panel=box('RoomArcadePanel',.58,.12,.36,ax+roadDir*.25,.72,az,mats.consoleTrim);
+      [body,screen,panel].forEach(o=>shadows.addShadowCaster(o));
+      roomObjectCollider('arcade',ax,az,.84,.72);
+    }
+  }
+  else { // taller / almacén
+    const shelf=box('WorkshopShelf',.52,1.34,1.70,x-roadDir*(w*.38),.68,z,mats.locker);
+    const crate1=box('WorkshopCrate',.70,.62,.70,x+roadDir*.28,.31,z-.55,mats.boxMat);
+    const crate2=box('WorkshopCrate',.60,.52,.60,x+roadDir*.52,.26,z+.36,mats.boxMat);
+    const bench=box('WorkshopBench',1.45,.18,.58,x-roadDir*.05,.68,z+d*.26,mats.wood);
+    [shelf,crate1,crate2,bench].forEach(o=>shadows.addShadowCaster(o));
+    roomObjectCollider('estantería',x-roadDir*(w*.38),z,.62,1.80);
+    roomObjectCollider('mesa taller',x-roadDir*.05,z+d*.26,1.55,.68);
+  }
+}
+
+function building(x,z,w,d,h,m,simple=false){
+  // Edificio tipo "dollhouse": NO hay techo ni caja sólida.
+  // La cámara puede ver siempre el interior.
+  const wallH=simple?1.40:1.70;
+  const wallT=.16;
+  const floorM=[mats.floorBlue,mats.floorGreen,mats.floorPurple][roomSerial%3];
+
+  const floor=box('RoomFloor',w,.15,d,x,.075,z,floorM);
+  floor.receiveShadows=true;
+
+  // Los edificios están a izquierda/derecha: la pared que mira a X=0 es la fachada.
+  const outward=x<0?-1:1;
+  const roadDir=-outward;
+  const outerX=x+outward*(w/2-wallT/2);
+  const innerX=x-outward*(w/2-wallT/2);
+
+  const back=box('RoomBack',wallT,wallH,d,outerX,wallH/2,z,m);
+  const side1=box('RoomSide1',w,wallH,wallT,x,wallH/2,z-d/2+wallT/2,m);
+  const side2=box('RoomSide2',w,wallH,wallT,x,wallH/2,z+d/2-wallT/2,m);
+
+  // Fachada partida: deja una puerta ancha hacia la calle.
+  const doorGap=1.25;
+  const seg=(d-doorGap)/2;
+  const front1=box('RoomFront1',wallT,wallH,seg,innerX,wallH/2,z-(doorGap/2+seg/2),m);
+  const front2=box('RoomFront2',wallT,wallH,seg,innerX,wallH/2,z+(doorGap/2+seg/2),m);
+
+  [back,side1,side2,front1,front2].forEach(o=>shadows.addShadowCaster(o));
+
+  addCollider('pared fondo',outerX,z,wallT+.05,d,.02);
+  addCollider('pared lateral',x,z-d/2+wallT/2,w,wallT+.05,.02);
+  addCollider('pared lateral',x,z+d/2-wallT/2,w,wallT+.05,.02);
+  addCollider('pared fachada',innerX,z-(doorGap/2+seg/2),wallT+.05,seg,.02);
+  addCollider('pared fachada',innerX,z+(doorGap/2+seg/2),wallT+.05,seg,.02);
+
+  // Entrada marcada visualmente desde la acera.
+  const entry=box('RoomEntry',1.05,.025,.72,innerX+roadDir*.42,.17,z,mats.sidewalk);
+  entry.rotation.y=Math.PI/2;
+
+  furnishRoom(roomSerial%6,x,z,roadDir,w,d);
+  roomSerial++;
+}
+
+// ---------------------------------------------------------
+// CIUDAD VIVA: CASAS Y ESPACIOS NOMBRADOS
+// ---------------------------------------------------------
+function makeHouse(x,z,name,wallMat){
+  const s=openShell(name,x,z,8.2,7.4,wallMat,mats.floorBlue,1.5);
+  addFrontYard(s,1.20,4);
+  // Cruz interior con puertas: sala, cocina, dormitorio y baño.
+  wallZ(name+'DivV',x,z,7.0,wallMat,z+.8,1.15);
+  wallX(name+'DivH',x,z-.65,7.8,wallMat,x-.65,1.15);
+
+  makeGroundLabel(name,x,s.frontX===x?z:s.frontX,3.7,.62,'#3e5c70');
+
+  // Sala
+  const sofa=box('Sofa',1.65,.52,.68,x+s.towardRoad*.70,.32,z+1.55,mats.wall2);
+  const tv=box('TV',.72,.52,.10,x-s.towardRoad*1.15,.78,z+1.55,mats.monitor);
+  shadows.addShadowCaster(sofa);shadows.addShadowCaster(tv);
+  addCollider('sofá',x+s.towardRoad*.70,z+1.55,1.75,.78,.03);
+  registerDistraction('Televisión',x-s.towardRoad*1.15,z+1.55,1.25,.8);
+
+  // Cocina
+  const kitchen=box('Kitchen',1.75,.72,.55,x-s.towardRoad*.55,.36,z-2.35,mats.counter);
+  shadows.addShadowCaster(kitchen);addCollider('cocina',x-s.towardRoad*.55,z-2.35,1.85,.65,.03);
+
+  // Dormitorio
+  simpleBed(x+s.towardRoad*.85,z-.95);
+
+  // Mesa comedor
+  const table=cyl('HouseTable',1.08,.13,x-s.towardRoad*.80,.70,z+.20,mats.wood);
+  shadows.addShadowCaster(table);addCollider('mesa',x-s.towardRoad*.80,z+.20,1.20,1.20,.02);
+
+  makeGroundLabel('SALA',x+s.towardRoad*.85,z+2.55,1.5,.36,'#506e80','#ffffff',27);
+  makeGroundLabel('COCINA',x-s.towardRoad*.85,z-2.90,1.7,.36,'#506e80','#ffffff',27);
+  makeGroundLabel('DORMITORIO',x+s.towardRoad*.85,z-.15,2.3,.36,'#506e80','#ffffff',25);
+}
+makeHouse(-10.0,12.0,'CASA FAMILIAR',mats.wall1);
+makeHouse( 10.0,11.0,'CASA FAMILIAR',mats.wall3);
+
+// ---------------------------------------------------------
+// CANCHA DE FÚTBOL SINTÉTICA
+// ---------------------------------------------------------
+function makeSoccerField(){
+  const x=-15.3,z=-.3,w=11.5,d=7.2;
+  box('SoccerField',w,.12,d,x,.06,z,mats.synthetic);registerFloor('Cancha fútbol',x,z,w,d,.12);
+  makeGroundLabel('CANCHA DE FÚTBOL',x,z-d/2+.55,4.7,.55,'#155c38');
+
+  // Líneas
+  box('SoccerMid',.06,.02,d-.5,x,.14,z,mats.courtLine);
+  box('SoccerTop',w-.5,.02,.06,x,.14,z-d/2+.25,mats.courtLine);
+  box('SoccerBottom',w-.5,.02,.06,x,.14,z+d/2-.25,mats.courtLine);
+  box('SoccerL',.06,.02,d-.5,x-w/2+.25,.14,z,mats.courtLine);
+  box('SoccerR',.06,.02,d-.5,x+w/2-.25,.14,z,mats.courtLine);
+  const center=B.MeshBuilder.CreateTorus('SoccerCenter',{diameter:1.8,thickness:.04,tessellation:28},scene);
+  center.position.set(x,.15,z);center.rotation.x=Math.PI/2;center.material=mats.courtLine;
+
+  function goal(gx){
+    const p1=cyl('GoalPost',.09,1.12,gx,.56,z-1.0,mats.courtLine);p1.rotation.z=Math.PI/2;
+    const p2=cyl('GoalPost',.09,1.12,gx,.56,z+1.0,mats.courtLine);p2.rotation.z=Math.PI/2;
+    const bar=cyl('GoalBar',.09,2.05,gx,.95,z,mats.courtLine);bar.rotation.x=Math.PI/2;
+  }
+  goal(x-w/2+.15);goal(x+w/2-.15);
+
+  const ball=sphere('SoccerBall',.40,x,.32,z,mats.sidewalk);shadows.addShadowCaster(ball);
+  registerActivity('soccer','TIRO AL ARCO',x,z,1.45);
+  registerDistraction('Partido de fútbol',x,z,3.2,.45);
+}
+makeSoccerField();
+
+// ---------------------------------------------------------
+// CANCHA DE BÁSQUET
+// ---------------------------------------------------------
+function makeBasketCourt(){
+  const x=15.0,z=.1,w=9.6,d=7.0;
+  box('BasketCourt',w,.12,d,x,.06,z,mats.court);registerFloor('Cancha básquet',x,z,w,d,.12);
+  makeGroundLabel('CANCHA DE BÁSQUET',x,z-d/2+.55,4.7,.55,'#7b4430');
+
+  box('BasketMid',.06,.02,d-.4,x,.14,z,mats.courtLine);
+  const cc=B.MeshBuilder.CreateTorus('BasketCenter',{diameter:1.7,thickness:.04,tessellation:26},scene);
+  cc.position.set(x,.15,z);cc.rotation.x=Math.PI/2;cc.material=mats.courtLine;
+
+  function hoop(hx){
+    const pole=cyl('BasketPole',.13,1.9,hx,.95,z,mats.metal);
+    const board=box('BasketBoard',.12,.78,1.05,hx,.1+1.70,z,mats.sidewalk);
+    const rim=B.MeshBuilder.CreateTorus('BasketRim',{diameter:.48,thickness:.045,tessellation:24},scene);
+    rim.position.set(hx+(hx<x?.27:-.27),1.65,z);rim.rotation.z=Math.PI/2;rim.material=mats.orange;
+    shadows.addShadowCaster(pole);shadows.addShadowCaster(board);
+  }
+  hoop(x-w/2+.35);hoop(x+w/2-.35);
+  const ball=sphere('BasketBall',.34,x+.2,.30,z+.3,mats.orange);
+  registerActivity('basket','TIRO DE BÁSQUET',x,z,1.45);
+  registerDistraction('Cancha de básquet',x,z,3.0,.42);
+}
+makeBasketCourt();
+
+// ---------------------------------------------------------
+// CENTRO DE REUNIONES / IGLESIA
+// ---------------------------------------------------------
+function makeChurch(){
+  const x=-15.3,z=-12.5,w=13.8,d=10.5;
+  const s=openShell('Church',x,z,w,d,mats.wall1,mats.floorPurple,2.0);
+  addFrontYard(s,1.25,5);
+  makeGroundLabel('IGLESIA DE JESUCRISTO DE LOS SANTOS DE LOS ÚLTIMOS DÍAS',x,z-d/2+.55,8.4,.75,'#294d65','#ffffff',28);
+
+  // Capilla grande lado izquierdo
+  wallZ('ChurchMainDivider',x+.8,z,d-.4,mats.wall1,z+.4,1.25);
+  // Aulas del lado derecho
+  wallX('ChurchClassA',x+3.5,z-1.7,5.9,mats.wall1,x+3.4,1.05);
+  wallX('ChurchClassB',x+3.5,z+1.8,5.9,mats.wall1,x+3.4,1.05);
+
+  // Filas de bancas
+  for(let zz=z-3.0;zz<=z+2.5;zz+=1.05){
+    const pew=box('Pew',4.3,.42,.46,x-2.2,.28,zz,mats.pew);
+    shadows.addShadowCaster(pew);addCollider('banca capilla',x-2.2,zz,4.4,.56,.02);
+  }
+  const pulpit=box('Pulpit',1.0,.92,.72,x-2.2,.46,z-4.15,mats.wood);
+  shadows.addShadowCaster(pulpit);addCollider('púlpito',x-2.2,z-4.15,1.1,.82,.02);
+
+  // Historia familiar / computadoras
+  simpleDesk(x+3.1,z+3.2);simpleDesk(x+4.8,z+3.2);
+  registerActivity('family','HISTORIA FAMILIAR',x+3.9,z+3.0,1.5);
+  registerDistraction('Teléfono en la capilla',x+4.6,z-.2,1.1,.75);
+
+  makeGroundLabel('CAPILLA',x-2.2,z-3.55,2.2,.40,'#4a6173','#ffffff',26);
+  makeGroundLabel('AULAS',x+3.7,z-.1,1.8,.40,'#4a6173','#ffffff',26);
+  makeGroundLabel('HISTORIA FAMILIAR',x+3.9,z+4.25,3.3,.40,'#4a6173','#ffffff',23);
+}
+makeChurch();
+
+// ---------------------------------------------------------
+// BIBLIOTECA GRANDE
+// ---------------------------------------------------------
+function makeLibrary(){
+  const x=15.3,z=-12.5,w=13.8,d=10.5;
+  const s=openShell('Library',x,z,w,d,mats.wall2,mats.floorBlue,2.0);
+  addFrontYard(s,1.20,5);
+  makeGroundLabel('BIBLIOTECA',x,z-d/2+.55,4.0,.68,'#39587a');
+
+  // Sala de lectura / computadoras
+  wallZ('LibDivider',x-.4,z,d-.5,mats.wall2,z+.4,1.3);
+  for(let zz=z-3.6;zz<=z+3.3;zz+=1.2){
+    const shelf=box('Bookshelf',.58,1.25,2.3,x+3.2,.64,zz,mats.book);
+    shadows.addShadowCaster(shelf);addCollider('estantería',x+3.2,zz,.68,2.4,.02);
+  }
+  for(let zz=z-2.7;zz<=z+2.5;zz+=2.2){
+    const table=box('LibraryTable',2.6,.14,.75,x-2.6,.73,zz,mats.wood);
+    shadows.addShadowCaster(table);addCollider('mesa biblioteca',x-2.6,zz,2.7,.85,.02);
+  }
+  simpleDesk(x-.8,z+3.4);simpleDesk(x-2.3,z+3.4);
+
+  // Libros de colores / punto de juego
+  for(let i=0;i<7;i++){
+    const bk=box('ColorBook',.18,.38,.42,x+1.0+i*.26,.24,z-3.6,i%2?mats.book:mats.book2);
+    bk.rotation.z=(i-3)*.04;
+  }
+  registerActivity('library','BUSCAR EL LIBRO',x+1.7,z-3.6,1.45);
+  registerDistraction('Computadoras de biblioteca',x-1.6,z+3.4,1.7,.70);
+
+  makeGroundLabel('LECTURA',x-2.4,z-4.0,2.0,.38,'#4a6173','#ffffff',24);
+  makeGroundLabel('ESTANTERÍAS',x+3.2,z-4.0,2.5,.38,'#4a6173','#ffffff',23);
+}
+makeLibrary();
+
+
+function dentalTileFloor(cx,cz,w,d){
+  // Rejilla sutil estilo cartoon para recordar interiores de juegos tipo social-deduction.
+  for(let i=1;i<=3;i++){
+    const zz=cz-d/2+(i*d/4);
+    box('DentalTileLineH'+i,w-.45,.02,.045,cx,.10,zz,mats.sidewalk);
+  }
+  for(let i=1;i<=3;i++){
+    const xx=cx-w/2+(i*w/4);
+    box('DentalTileLineV'+i,.045,.02,d-.45,xx,.10,cz,mats.sidewalk);
+  }
+}
+function smallPaperStack(x,z){
+  const p1=box('PaperA',.26,.02,.20,x,.82,z,mats.paper);
+  const p2=box('PaperB',.22,.02,.16,x+.10,.84,z+.02,mats.paper);
+  [p1,p2].forEach(o=>shadows.addShadowCaster(o));
+}
+function makeDentalChairUnit(x,z){
+  const base=box('DentalChairBase',.70,.26,1.18,x,.16,z,mats.metal);
+  const seat=box('DentalChairSeat',.74,.16,.70,x,.38,z+.08,mats.dental);
+  const back=box('DentalChairBack',.74,.16,.98,x,.62,z-.20,mats.dental);
+  back.rotation.x=-.55;
+  const leg=box('DentalChairLeg',.28,.20,.46,x,.28,z+.58,mats.dental);
+  leg.rotation.x=.45;
+  const head=box('DentalHeadRest',.54,.12,.28,x,.95,z-.66,mats.medical);
+  const armL=box('DentalArmL',.12,.10,.48,x-.42,.48,z+.06,mats.medical);
+  const armR=box('DentalArmR',.12,.10,.48,x+.42,.48,z+.06,mats.medical);
+  const pillow=box('DentalPillow',.44,.06,.24,x,.88,z-.48,mats.sidewalk);
+
+  const lampPole=cyl('DentalLampPole',.08,1.34,x+1.02,.67,z-.28,mats.metal);
+  const lampArm=box('DentalLampArm',.92,.05,.08,x+.56,1.20,z-.28,mats.metal);
+  const lampHead=sphere('DentalLampHead',.34,x+.10,1.18,z-.28,mats.lamp);
+
+  const trayPole=cyl('DentalTrayPole',.07,.88,x-.92,.44,z+.24,mats.metal);
+  const tray=box('DentalToolTray',.62,.06,.42,x-.92,.85,z+.24,mats.counter);
+  const tool1=box('DentalTool1',.08,.03,.24,x-.99,.90,z+.19,mats.metal);
+  const tool2=box('DentalTool2',.08,.03,.22,x-.84,.90,z+.28,mats.metal);
+  const cup=box('DentalCup',.12,.14,.12,x-.73,.94,z+.18,mats.sidewalk);
+
+  const stoolSeat=cyl('DentalStool',.42,.10,x-.15,.33,z+1.28,mats.medical);
+  const stoolPole=cyl('DentalStoolPole',.06,.42,x-.15,.18,z+1.28,mats.metal);
+  const stoolBase=cyl('DentalStoolBase',.26,.05,x-.15,.02,z+1.28,mats.metal);
+
+  [
+    base,seat,back,leg,head,armL,armR,pillow,
+    lampPole,lampArm,lampHead,trayPole,tray,tool1,tool2,cup,
+    stoolSeat,stoolPole,stoolBase
+  ].forEach(o=>shadows.addShadowCaster(o));
+
+  addCollider('unidad dental',x,z,2.10,2.35,.04);
+}
+function makeDentalCounterLine(x,z){
+  const counter=box('DentalCounter',2.15,.78,.54,x,.39,z,mats.counter);
+  const sink=box('DentalSink',.44,.08,.34,x-.52,.80,z,mats.medical);
+  const faucet=box('DentalFaucet',.10,.18,.10,x-.52,.93,z-.02,mats.metal);
+  const sterBox=box('DentalSterBox',.48,.32,.38,x+.62,.97,z,mats.monitor);
+  const drawer1=box('DentalDrawer1',.46,.14,.08,x-.04,.28,z+.25,mats.medical);
+  const drawer2=box('DentalDrawer2',.46,.14,.08,x+.48,.28,z+.25,mats.medical);
+  const cabA=box('DentalWallCabA',.78,.44,.24,x-.74,1.26,z,mats.medical);
+  const cabB=box('DentalWallCabB',.78,.44,.24,x+.12,1.26,z,mats.medical);
+  const xray=box('DentalXrayPanel',.82,.56,.05,x+.96,1.08,z-.28,mats.monitor);
+  const xrayTooth=box('DentalXrayTooth',.18,.26,.03,x+.96,1.08,z-.28,mats.sidewalk);
+  [counter,sink,faucet,sterBox,drawer1,drawer2,cabA,cabB,xray,xrayTooth].forEach(o=>shadows.addShadowCaster(o));
+  addCollider('mostrador dental',x,z,2.30,.68,.03);
+}
+function makeWaitingBench(x,z){
+  const bench=box('DentalBench',1.36,.14,.42,x,.38,z,mats.counter);
+  const back=box('DentalBenchBack',1.36,.50,.12,x,.70,z-.18,mats.medical);
+  const leg1=box('DentalBenchLeg1',.10,.36,.10,x-.45,.18,z,mats.metal);
+  const leg2=box('DentalBenchLeg2',.10,.36,.10,x+.45,.18,z,mats.metal);
+  const mag=box('DentalMagazine',.22,.03,.18,x+.18,.48,z+.02,mats.book2);
+  [bench,back,leg1,leg2,mag].forEach(o=>shadows.addShadowCaster(o));
+  addCollider('banca espera',x,z,1.50,.52,.03);
+}
+// ---------------------------------------------------------
+// CLÍNICA DENTAL
+// ---------------------------------------------------------
+function makeDentist(){
+  const x=-15.5,z=-25.4,w=9.6,d=8.0;
+  const s=openShell('Dentist',x,z,w,d,mats.wall3,mats.floorGreen,1.6);
+  addFrontYard(s,1.05,4);
+  makeGroundLabel('CLÍNICA DENTAL',x,z-d/2+.48,3.9,.58,'#356e73');
+
+  // Distribución interna: recepción + consultorio + esterilización.
+  wallX('DentistFrontDivider',x,z+1.15,w-.28,mats.wall3,x-.20,1.25);
+  wallZ('DentistSterileDivider',x+1.62,z-.98,3.55,mats.wall3,z-.22,1.05);
+
+  // Rejilla del piso para que el cuarto se lea con estilo más cartoon/detallado.
+  dentalTileFloor(x,z,w,d);
+
+  // RECEPCIÓN / SALA DE ESPERA (parte frontal, más cerca de la calle)
+  const deskTop=box('DentalReceptionDesk',1.70,.18,.72,x+2.12,.72,z+2.70,mats.wood);
+  const deskBody=box('DentalReceptionBody',1.75,.64,.52,x+2.12,.34,z+2.86,mats.counter);
+  const recvMon=box('DentalReceptionMonitor',.46,.34,.08,x+1.86,1.01,z+2.48,mats.monitor);
+  const recvChair=cyl('DentalReceptionChair',.40,.12,x+2.74,.36,z+3.18,mats.dark);
+  const recvPole=cyl('DentalReceptionChairPole',.06,.34,x+2.74,.18,z+3.18,mats.metal);
+  const toothIcon=box('DentalToothSign',.42,.52,.05,x+2.92,1.08,z+2.46,mats.sidewalk);
+  smallPaperStack(x+2.24,z+2.58);
+  makeWaitingBench(x-.82,z+2.92);
+  makeWaitingBench(x-.82,z+1.98);
+  [deskTop,deskBody,recvMon,recvChair,recvPole,toothIcon].forEach(o=>shadows.addShadowCaster(o));
+  addCollider('recepción dental',x+2.12,z+2.86,1.85,.85,.03);
+
+  // CONSULTORIO PRINCIPAL
+  makeDentalChairUnit(x-1.72,z-.72);
+  const opLampPole=cyl('DentalOpPole',.09,1.36,x-.08,.68,z-1.36,mats.metal);
+  const opLampArm=box('DentalOpArm',1.06,.06,.08,x-.58,1.24,z-1.36,mats.metal);
+  const opLampHead=sphere('DentalOpHead',.38,x-1.02,1.22,z-1.36,mats.lamp);
+  const sideCab=box('DentalSideCabinet',.78,.82,.48,x-.18,.41,z+.12,mats.counter);
+  const rinse=box('DentalRinseUnit',.28,.22,.28,x-.06,.69,z-.12,mats.medical);
+  const pcDesk=box('DentalPCDesk',.92,.12,.50,x-3.18,.72,z-2.82,mats.wood);
+  const pcMonitor=box('DentalPCMonitor',.42,.30,.08,x-3.10,1.00,z-2.94,mats.monitor);
+  const pcChair=cyl('DentalPCChair',.36,.10,x-3.22,.32,z-2.12,mats.dark);
+  const pcPole=cyl('DentalPCChairPole',.05,.32,x-3.22,.16,z-2.12,mats.metal);
+  [opLampPole,opLampArm,opLampHead,sideCab,rinse,pcDesk,pcMonitor,pcChair,pcPole].forEach(o=>shadows.addShadowCaster(o));
+  addCollider('estación clínica',x-2.0,z-1.0,3.9,3.4,.04);
+
+  // ESTERILIZACIÓN / RAYOS X
+  makeDentalCounterLine(x+2.16,z-.84);
+  const toolRack=box('DentalToolRack',.82,.52,.12,x+2.72,1.08,z+.42,mats.medical);
+  const toolA=box('DentalClamp',.10,.03,.28,x+2.48,1.12,z+.44,mats.metal);
+  const toolB=box('DentalMirrorTool',.10,.03,.24,x+2.68,1.11,z+.55,mats.metal);
+  const xrayArm=cyl('DentalXrayArmPole',.07,1.12,x+3.36,.56,z-1.80,mats.metal);
+  const xrayArm1=box('DentalXrayArm1',.52,.06,.08,x+3.10,1.02,z-1.80,mats.metal);
+  const xrayHead=sphere('DentalXrayHead',.28,x+2.80,1.02,z-1.80,mats.dark);
+  const sterilizer=box('DentalSterilizer',.56,.30,.38,x+2.08,.96,z-.84,mats.monitor);
+  [toolRack,toolA,toolB,xrayArm,xrayArm1,xrayHead,sterilizer].forEach(o=>shadows.addShadowCaster(o));
+  addCollider('zona esterilización',x+2.10,z-.95,2.35,3.2,.04);
+
+  // Detalles decorativos / señalización tipo cartoon
+  makeGroundLabel('RECEPCIÓN',x+2.18,z+3.44,2.25,.38,'#4b7779','#ffffff',22);
+  makeGroundLabel('CONSULTORIO 1',x-1.86,z-3.08,2.75,.38,'#4b7779','#ffffff',20);
+  makeGroundLabel('RAYOS X',x+2.86,z-3.02,1.75,.34,'#4b7779','#ffffff',22);
+  makeGroundLabel('ESTERILIZACIÓN',x+2.10,z+.72,2.55,.34,'#4b7779','#ffffff',18);
+
+  registerActivity('dentist','LIMPIEZA DENTAL',x-1.60,z-.82,1.55);
+  registerDistraction('Pantalla clínica',x-3.10,z-2.94,1.10,.58);
+  registerDistraction('Recepción dental',x+2.12,z+2.70,1.15,.56);
+}
+makeDentist();
+
+// ---------------------------------------------------------
+// HOSPITAL GRANDE MULTIÁREA
+// ---------------------------------------------------------
+function makeHospital(){
+  const x=15.8,z=-31.7,w=18.0,d=20.5;
+  const s=openShell('Hospital',x,z,w,d,mats.wall1,mats.floorGreen,2.6);
+  addFrontYard(s,1.30,6);
+  makeGroundLabel('HOSPITAL',x,z-d/2+.65,5.1,.72,'#316c6c');
+
+  // Pasillo central vertical
+  wallZ('HospitalHallL',x-1.0,z,d-.5,mats.wall1,z+6.5,1.3);
+  wallZ('HospitalHallR',x+1.0,z,d-.5,mats.wall1,z-5.5,1.3);
+
+  // Divisiones horizontales con puertas
+  [-6.2,-1.8,2.6,6.8].forEach((off,i)=>{
+    wallX('HospitalH'+i,x,z+off,w-.4,mats.wall1,x+(i%2?2.4:-2.6),1.25);
+  });
+
+  // EMERGENCIA (frente)
+  makeGroundLabel('EMERGENCIA',x,z+8.3,2.8,.40,'#8b4d4d','#ffffff',22);
+  for(let i=-1;i<=1;i++){
+    const stretcher=box('ERStretcher',.72,.34,1.65,x-5.5+i*2.1,.36,z+6.3,mats.medical);
+    shadows.addShadowCaster(stretcher);addCollider('camilla emergencia',x-5.5+i*2.1,z+6.3,.82,1.75,.03);
+  }
+  const triage=box('TriageDesk',2.0,.78,.58,x+5.6,.39,z+7.1,mats.counter);
+  shadows.addShadowCaster(triage);addCollider('triage',x+5.6,z+7.1,2.1,.68,.03);
+  registerActivity('triage','TRIAGE DE EMERGENCIA',x+4.5,z+6.5,1.5);
+
+  // MATERNIDAD
+  makeGroundLabel('MATERNIDAD',x-5.5,z+2.2,2.7,.38,'#5f7f8d','#ffffff',21);
+  simpleBed(x-6.0,z+1.1);simpleBed(x-3.8,z+1.1);
+
+  // NEONATOS
+  makeGroundLabel('NEONATOS',x+5.2,z+2.2,2.5,.38,'#4f8d9b','#ffffff',21);
+  for(let i=-1;i<=1;i++){
+    const incub=box('Incubator',.78,.68,.82,x+4.0+i*1.35,.38,z+.9,mats.neonatal);
+    const hood=sphere('IncubatorHood',.68,x+4.0+i*1.35,.85,z+.9,mats.sidewalk);
+    hood.scaling.set(1,.45,1);
+    shadows.addShadowCaster(incub);shadows.addShadowCaster(hood);
+    addCollider('incubadora',x+4.0+i*1.35,z+.9,.90,.94,.02);
+  }
+
+  // CIRUGÍA
+  makeGroundLabel('CIRUGÍA',x-5.3,z-2.1,2.3,.38,'#458b75','#ffffff',21);
+  const surg=box('SurgeryTable',.85,.48,1.85,x-5.2,.42,z-3.2,mats.surgery);
+  const surgLamp=sphere('SurgeryLamp',.65,x-5.2,1.35,z-3.2,mats.lamp);
+  shadows.addShadowCaster(surg);shadows.addShadowCaster(surgLamp);
+  addCollider('mesa cirugía',x-5.2,z-3.2,1.0,2.0,.03);
+
+  // HOSPITALIZACIÓN
+  makeGroundLabel('HOSPITALIZACIÓN',x+4.8,z-2.1,3.5,.38,'#587486','#ffffff',20);
+  for(let i=0;i<3;i++)simpleBed(x+3.2+i*1.8,z-3.2);
+
+  // LABORATORIO / FARMACIA
+  makeGroundLabel('LABORATORIO',x-4.8,z-6.6,2.8,.38,'#576e83','#ffffff',20);
+  for(let i=0;i<3;i++){
+    const lab=box('HospitalLab',1.35,.70,.50,x-6.0+i*1.55,.36,z-7.8,mats.counter);
+    shadows.addShadowCaster(lab);addCollider('mesón laboratorio',x-6.0+i*1.55,z-7.8,1.45,.60,.02);
+  }
+
+  makeGroundLabel('FARMACIA',x+4.8,z-6.6,2.3,.38,'#536f76','#ffffff',20);
+  for(let i=-1;i<=1;i++){
+    const shelf=box('PharmacyShelf',.58,1.2,1.9,x+4.8+i*1.6,.62,z-7.8,mats.locker);
+    shadows.addShadowCaster(shelf);addCollider('estante farmacia',x+4.8+i*1.6,z-7.8,.68,2.0,.02);
+  }
+
+  // Pantallas / distracción hospitalaria
+  registerDistraction('Pantalla de sala de espera',x+6.0,z+8.0,1.35,.75);
+  const waitScreen=box('WaitingScreen',.65,.46,.08,x+6.0,1.02,z+8.0,mats.monitor);
+  shadows.addShadowCaster(waitScreen);
+}
+makeHospital();
+
+// Algunos comercios pequeños del barrio siguen usando los cuartos simples.
+building(-9.9,-39.5,5.0,5.2,1.5,mats.wall2,true);
+building( 9.9,-45.0,5.1,5.1,1.5,mats.wall3,true);
+
+function lamp(x,z){
+  const p=cyl('pole',.15,3.6,x,1.8,z,mats.pole);
+  addCollider('poste',x,z,.25,.25,.06);
+  const s=sphere('light',.45,x,3.58,z,mats.lamp);
+  shadows.addShadowCaster(p);shadows.addShadowCaster(s);
+}
+[-17,-8,1,10,18].forEach((z,i)=>{lamp(-2.78,z);if(i%2===0)lamp(2.78,z+2.2)});
+
+function tree(x,z,s=1){
+  const t=cyl('trunk',.44*s,1.75*s,x,.875*s,z,mats.trunk);
+  addCollider('árbol',x,z,.58*s,.58*s,.08);
+  shadows.addShadowCaster(t);
+
+  // ramas visibles
+  const br1=cyl('branch',.18*s,.85*s,x-.27*s,1.35*s,z,mats.trunk);
+  br1.rotation.z=-.65;
+  const br2=cyl('branch',.16*s,.72*s,x+.28*s,1.48*s,z+.05*s,mats.trunk);
+  br2.rotation.z=.72;
+  shadows.addShadowCaster(br1);shadows.addShadowCaster(br2);
+
+  // copa compuesta de varias masas, estilo cartoon detallado
+  const clusters=[
+    [0,2.10,0,.90,1.0,mats.leaves],
+    [-.62,1.98,.02,.68,.88,mats.leaves2],
+    [.62,2.02,.04,.72,.90,mats.leaves3],
+    [-.25,2.60,.02,.62,.78,mats.leaves3],
+    [.36,2.48,-.08,.66,.82,mats.leaves2],
+    [0,2.28,.46,.58,.75,mats.leaves]
+  ];
+  clusters.forEach((c,i)=>{
+    const leaf=sphere('leafCluster'+i,1.45*s,x+c[0]*s,c[1]*s,z+c[2]*s,c[5]);
+    leaf.scaling.set(c[3],c[4],c[3]*.92);
+    shadows.addShadowCaster(leaf);
+  });
+}
+[[-6.3,-3],[6.3,-1],[-6.3,5],[6.3,7],[-6.5,19],[6.5,-19]].forEach(p=>tree(...p));
+
+// Más objetos cerca de la calle para que caminar no se sienta vacío.
+function bench(x,z,rot=0){
+  const seat=box('benchSeat',1.55,.16,.48,x,.48,z,mats.wood);
+  addCollider('banca',x,z,rot?0.75:1.75,rot?1.75:0.75,.05);
+  const back=box('benchBack',1.55,.62,.14,x,.80,z-.18,mats.wood);
+  const leg1=box('benchLeg',.14,.48,.14,x-.52,.24,z,mats.metal);
+  const leg2=box('benchLeg',.14,.48,.14,x+.52,.24,z,mats.metal);
+  [seat,back,leg1,leg2].forEach(m=>{m.rotation.y=rot;shadows.addShadowCaster(m)});
+}
+function trashBin(x,z){
+  const body=cyl('trashBin',.55,.82,x,.41,z,mats.dark);
+  addCollider('basurero',x,z,.65,.65,.04);
+  const rim=cyl('trashRim',.63,.10,x,.85,z,mats.metal);
+  shadows.addShadowCaster(body);shadows.addShadowCaster(rim);
+}
+function trafficCone(x,z){
+  const base=box('coneBase',.48,.08,.48,x,.04,z,mats.dark);
+  addCollider('cono',x,z,.52,.52,.02);
+  const cone=B.MeshBuilder.CreateCylinder('cone',{diameterTop:.10,diameterBottom:.38,height:.68,tessellation:16},scene);
+  cone.position.set(x,.40,z);cone.material=mats.orange;shadows.addShadowCaster(cone);
+}
+function streetSign(x,z,textSide=1){
+  const pole=cyl('signPole',.10,2.05,x,1.02,z,mats.metal);
+  addCollider('señal',x,z,.26,.26,.05);
+  const plate=box('signPlate',.78,.52,.08,x,1.90,z,mats.blueSign);
+  plate.rotation.y=textSide<0?Math.PI:0;
+  shadows.addShadowCaster(pole);shadows.addShadowCaster(plate);
+}
+function crate(x,z,scale=1){
+  const c=box('crate',.70*scale,.62*scale,.70*scale,x,.31*scale,z,mats.boxMat);
+  addCollider('caja',x,z,.75*scale,.75*scale,.04);
+  shadows.addShadowCaster(c);
+}
+function planter(x,z){
+  const pot=cyl('planter',.72,.48,x,.24,z,mats.planter);
+  addCollider('macetero',x,z,.82,.82,.04);
+  const bush=sphere('planterBush',.82,x,.72,z,mats.leaves);
+  shadows.addShadowCaster(pot);shadows.addShadowCaster(bush);
+}
+function hydrant(x,z){
+  const b=cyl('hydrant',.38,.72,x,.36,z,mats.red);
+  addCollider('hidrante',x,z,.52,.52,.05);
+  const top=sphere('hydrantTop',.42,x,.78,z,mats.red);
+  shadows.addShadowCaster(b);shadows.addShadowCaster(top);
+}
+
+// Distribución a ambos lados de la vía, cerca de la cámara y del recorrido.
+
+// Parque pequeño al lado izquierdo: las bancas salen de la banqueta.
+const parkFloor=box('parkFloor',4.2,.18,10.5,-8.0,.06,5.2,mats.grass);
+const parkPath=box('parkPath',1.55,.18,9.5,-7.0,.12,5.2,mats.sidewalk);
+
+// Bancas dentro del parque, no bloqueando el paso peatonal.
+[
+  [-8.35,2.0,Math.PI/2],
+  [-8.35,5.1,Math.PI/2],
+  [-8.35,8.2,Math.PI/2]
+].forEach(p=>bench(...p));
+
+// Árboles y maceteros del parque.
+tree(-9.0,1.2); tree(-9.0,9.2);
+planter(-7.9,.8); planter(-7.9,9.6);
+
+
+[[-5.55,18], [5.55,15], [-5.55,-9], [5.55,-15]].forEach(p=>trashBin(...p));
+[[-3.05,13], [3.05,8], [-3.05,0], [3.05,-4], [-3.05,-13], [3.05,-19]].forEach(p=>trafficCone(...p));
+[[-5.65,19,1], [5.65,12,-1], [-5.65,-11,1], [5.65,-18,-1]].forEach(p=>streetSign(...p));
+[[-6.25,14,1], [6.25,6,.9], [-6.15,-2,.85], [6.25,-10,1], [-6.2,-18,.9]].forEach(p=>crate(...p));
+[[-6.55,18], [6.55,16], [-6.55,9], [6.55,3], [-6.55,-7], [6.55,-14]].forEach(p=>planter(...p));
+[[-4.65,10], [4.65,-8], [-4.65,-17]].forEach(p=>hydrant(...p));
+
+
+// Dos pequeños espacios abiertos tipo habitación/local.
+// La parte que mira a la calle queda abierta.
+function openRoom(name,x,z,side,wallMat){
+  const dir=side<0?-1:1;
+  const roomW=4.0, roomD=3.6, roomH=2.7;
+
+  // Piso.
+  box(name+'Floor',roomW,.16,roomD,x,.08,z,mats.sidewalk);
+
+  // Pared posterior, lejos de la calle.
+  const back=box(name+'Back',.18,roomH,roomD,
+                 x+dir*(roomW/2-.09),roomH/2,z,wallMat);
+
+  // Paredes de arriba/abajo del cuarto.
+  const sideA=box(name+'SideA',roomW,roomH,.18,x,roomH/2,z-roomD/2+.09,wallMat);
+  const sideB=box(name+'SideB',roomW,roomH,.18,x,roomH/2,z+roomD/2-.09,wallMat);
+
+  // Mobiliario visible desde la calle.
+  const table=box(name+'Table',1.05,.14,.68,x-dir*.62,.72,z-.35,mats.wood);
+  const leg1=box(name+'TableLeg1',.12,.66,.12,x-dir*.92,.34,z-.55,mats.metal);
+  const leg2=box(name+'TableLeg2',.12,.66,.12,x-dir*.32,.34,z-.15,mats.metal);
+
+  const bed=box(name+'Bed',1.45,.32,.78,x+dir*.58,.31,z+.68,mats.blueSign);
+  const pillow=box(name+'Pillow',.46,.14,.48,x+dir*.58,.54,z+.68,mats.sidewalk);
+
+  [back,sideA,sideB,table,leg1,leg2,bed,pillow].forEach(m=>shadows.addShadowCaster(m));
+
+  addCollider(name+' pared fondo',x+dir*(roomW/2-.09),z,.30,roomD,.05);
+  addCollider(name+' pared A',x,z-roomD/2+.09,roomW,.30,.05);
+  addCollider(name+' pared B',x,z+roomD/2-.09,roomW,.30,.05);
+  addCollider(name+' mesa',x-dir*.62,z-.35,1.15,.78,.04);
+  addCollider(name+' cama',x+dir*.58,z+.68,1.55,.88,.04);
+}
+
+// Dos habitaciones/locales visibles al caminar.
+openRoom('RoomLeft',-7.35,8,-1,mats.wall3);
+openRoom('RoomRight',7.35,-5,1,mats.wall2);
+
+
+
+// ---------------------------------------------------------
+// ELEMENTOS DEL JUEGO PARA ESTA PRUEBA
+// ---------------------------------------------------------
+const spiritLights=[];
+function makeSpiritLight(x,z,id){
+  // Señal discreta: reflector luminoso sobre el suelo, no aro flotante.
+  const orb=box('SpiritMarker'+id,.34,.045,.58,x,.17,z,mats.spirit);
+  orb.rotation.y=(id%2?-.18:.18);
+  const light=new B.PointLight('SpiritLamp'+id,new B.Vector3(x,.48,z),scene);
+  light.diffuse=B.Color3.FromHexString('#8cecff');light.intensity=1.55;light.range=3.2;
+  spiritLights.push({id,x,z,orb,light,collected:false});
+}
+makeSpiritLight(0,-1,1);
+makeSpiritLight(2.35,-8,2);
+makeSpiritLight(-2.15,-15,3);
+
+// ---------------------------------------------------------
+// CHARCOS DE LLUVIA: ralentizan y obligan a decidir por dónde pasar.
+// ---------------------------------------------------------
+const puddleMat=new B.StandardMaterial('PuddleMaterial',scene);
+puddleMat.diffuseColor=B.Color3.FromHexString('#294f63');
+puddleMat.emissiveColor=B.Color3.FromHexString('#102d3d');
+puddleMat.alpha=.72;puddleMat.specularColor=new B.Color3(.8,.9,1);
+
+function makePuddle(x,z,rx,rz,name='Charco'){
+  const root=new B.TransformNode('Puddle',scene);
+  root.position.set(x,.125,z);
+  for(let i=0;i<4;i++){
+    const disc=B.MeshBuilder.CreateDisc('PuddlePart',{radius:1,tessellation:30,sideOrientation:B.Mesh.DOUBLESIDE},scene);
+    disc.parent=root;disc.rotation.x=Math.PI/2;
+    disc.position.set((Math.random()-.5)*rx*.65,.002,(Math.random()-.5)*rz*.65);
+    disc.scaling.set(rx*(.55+Math.random()*.28),rz*(.55+Math.random()*.25),1);
+    disc.material=puddleMat;
+  }
+  hazardZones.push({name,x,z,rx,rz,inside:false});
+}
+makePuddle(-.7,14.0,1.35,1.0,'Charco profundo');
+makePuddle(1.0,5.0,1.15,.85,'Charco');
+makePuddle(-1.05,-7.0,1.50,.95,'Agua acumulada');
+makePuddle(.9,-19.0,1.30,1.0,'Charco profundo');
+makePuddle(-.75,-31.0,1.45,.90,'Agua de tormenta');
+makePuddle(.65,-43.0,1.25,.95,'Charco');
+
+// Rótulo/grafiti de decisión integrado al mundo.
+const decisionBoard=box('DecisionBoard',1.65,.92,.10,-5.72,1.25,11.2,mats.dark);
+decisionBoard.rotation.y=Math.PI/2;
+const decisionGlow=new B.PointLight('DecisionGlow',new B.Vector3(-5.25,1.3,11.2),scene);
+decisionGlow.diffuse=B.Color3.FromHexString('#e4b968');decisionGlow.intensity=1.3;decisionGlow.range=3;
+addCollider('rótulo decisión',-5.72,11.2,.28,1.7,.04);
+
+// Destino de prueba: edificio luminoso al final del recorrido.
+function makeDestination(){
+  const z=-50.5;
+  const w=6.2,d=5.1,h=1.85,t=.18;
+  box('DestinationFloor',w,.16,d,0,.08,z,mats.floorPurple);
+
+  const back=box('DestinationBack',w,h,t,0,h/2,z-d/2+t/2,mats.wall1);
+  const left=box('DestinationLeft',t,h,d,-w/2+t/2,h/2,z,mats.wall1);
+  const right=box('DestinationRight',t,h,d,w/2-t/2,h/2,z,mats.wall1);
+  const frontL=box('DestinationFrontL',2.1,h,t,-2.0,h/2,z+d/2-t/2,mats.wall1);
+  const frontR=box('DestinationFrontR',2.1,h,t,2.0,h/2,z+d/2-t/2,mats.wall1);
+  [back,left,right,frontL,frontR].forEach(o=>shadows.addShadowCaster(o));
+
+  addCollider('destino pared',0,z-d/2+t/2,w,t,.03);
+  addCollider('destino pared',-w/2+t/2,z,t,d,.03);
+  addCollider('destino pared',w/2-t/2,z,t,d,.03);
+  addCollider('destino pared',-2.0,z+d/2-t/2,2.1,t,.03);
+  addCollider('destino pared',2.0,z+d/2-t/2,2.1,t,.03);
+
+  // Interior luminoso visible desde arriba.
+  const table=box('DestinationTable',2.0,.18,.86,0,.72,z-.55,mats.wood);
+  const glowObj=sphere('DestinationGlow',.72,0,1.25,z-.55,mats.goal);
+  const chair1=cyl('DestinationChair1',.48,.42,-1.30,.27,z+.48,mats.dark);
+  const chair2=cyl('DestinationChair2',.48,.42, 1.30,.27,z+.48,mats.dark);
+  [table,glowObj,chair1,chair2].forEach(o=>shadows.addShadowCaster(o));
+  roomObjectCollider('mesa destino',0,z-.55,2.15,.96);
+
+  const lamp=new B.PointLight('DestinationLight',new B.Vector3(0,1.5,z-.55),scene);
+  lamp.diffuse=B.Color3.FromHexString('#ffe7a2');lamp.intensity=4.2;lamp.range=9;
+}
+makeDestination();
+
+// Tres postes/carteles de preguntas en el recorrido, sin aros.
+function makeQuestionPost(x,z,side,id){
+  const poleX=x;
+  const pole=cyl('QuestionPole'+id,.11,1.8,poleX,.90,z,mats.metal);
+  const board=box('QuestionBoard'+id,1.05,.72,.08,poleX,1.70,z,mats.question);
+  board.rotation.y=side<0?Math.PI:0;
+  shadows.addShadowCaster(pole);shadows.addShadowCaster(board);
+  addCollider('poste pregunta',poleX,z,.25,.25,.04);
+
+  // Símbolo ? mediante textura dinámica sobre una placa pequeña.
+  const dt=new B.DynamicTexture('QuestionTex'+id,{width:128,height:96},scene,false);
+  const c=dt.getContext();c.fillStyle='#245879';c.fillRect(0,0,128,96);
+  c.fillStyle='#e9f8ff';c.font='bold 70px Arial';c.textAlign='center';c.textBaseline='middle';c.fillText('?',64,50);dt.update();
+  const dm=new B.StandardMaterial('QuestionMat'+id,scene);dm.diffuseTexture=dt;dm.emissiveColor=new B.Color3(.10,.18,.24);
+  const face=box('QuestionFace'+id,.88,.56,.025,poleX,1.70,z+(side<0?.055:-.055),dm);
+  face.rotation.y=side<0?Math.PI:0;
+}
+makeQuestionPost(-4.65,3.1,1,1);
+makeQuestionPost(4.65,-6.2,-1,2);
+makeQuestionPost(-4.65,-15.0,1,3);
+
+// Consola de videojuego física dentro del local derecho.
+const consoleRoot=new B.TransformNode('ArcadeConsole',scene);
+consoleRoot.position.set(10.7,0,-15.4);
+
+const consoleBody=box('ArcadeBody',1.05,1.55,.72,10.7,.78,-15.4,mats.consoleBody);
+const consoleTop=box('ArcadeTop',1.12,.28,.78,10.7,1.62,-15.4,mats.consoleTrim);
+const consoleScreen=box('ArcadeScreen',.73,.52,.05,10.7,1.18,-15.025,mats.consoleScreen);
+const arcadeTex=new B.DynamicTexture('ArcadeTex',{width:256,height:160},scene,false);
+const actx=arcadeTex.getContext();
+actx.fillStyle='#082532';actx.fillRect(0,0,256,160);
+actx.fillStyle='#7cecff';actx.font='bold 28px Arial';actx.textAlign='center';actx.fillText('SENDEROS',128,58);
+actx.fillStyle='#ffd65d';actx.font='bold 24px Arial';actx.fillText('JUGAR',128,110);
+arcadeTex.update();
+const arcadeScreenMat=new B.StandardMaterial('ArcadeScreenMat',scene);
+arcadeScreenMat.diffuseTexture=arcadeTex;arcadeScreenMat.emissiveTexture=arcadeTex;
+consoleScreen.material=arcadeScreenMat;
+consoleScreen.rotation.x=-.10;
+const consolePanel=box('ArcadePanel',.82,.14,.42,10.7,.84,-15.15,mats.consoleTrim);
+const joyBase=cyl('JoyBase',.18,.08,10.51,.95,-15.09,mats.station);
+const joyStick=cyl('JoyStick',.09,.25,10.51,1.08,-15.09,mats.dark);
+const arcadeBtn=sphere('ArcadeButton',.13,10.90,.97,-15.06,mats.red);
+
+[consoleBody,consoleTop,consoleScreen,consolePanel,joyBase,joyStick,arcadeBtn].forEach(m=>shadows.addShadowCaster(m));
+addCollider('consola arcade',10.7,-15.4,1.15,.85,.08);
+
+// Segunda máquina arcade decorativa dentro del mismo local.
+function makeArcade(x,z,labelColor){
+  const body=box('ArcadeDecorBody',1.0,1.48,.72,x,.74,z,mats.consoleBody);
+  const top=box('ArcadeDecorTop',1.06,.25,.76,x,1.57,z,mats.consoleTrim);
+  const screen=box('ArcadeDecorScreen',.70,.48,.05,x,1.16,z-.37,labelColor);
+  const panel=box('ArcadeDecorPanel',.78,.14,.40,x,.84,z-.30,mats.consoleTrim);
+  const joy=cyl('ArcadeDecorJoy',.08,.23,x-.18,1.05,z-.29,mats.dark);
+  const btn=sphere('ArcadeDecorBtn',.12,x+.20,.96,z-.31,mats.red);
+  [body,top,screen,panel,joy,btn].forEach(m=>shadows.addShadowCaster(m));
+  addCollider('consola decorativa',x,z,1.12,.84,.06);
+}
+makeArcade(10.7,-13.95,mats.station);
+
+const miniStation={position:new B.Vector3(10.7,0,-15.4)};
+
+// Sombra: versión oscura reconocible del mismo lenguaje visual.
+// NO aparece al inicio; solo se habilita con atención <= 60.
+const shadowNode=new B.TransformNode('ShadowFollower',scene);
+
+const shHelmet=sphere('ShHelmet',1.10,0,1.58,0,mats.shadow);
+shHelmet.parent=shadowNode;shHelmet.scaling.set(1.08,1.0,.92);
+const shVisor=sphere('ShVisor',.78,0,1.60,-.43,mats.dark);
+shVisor.parent=shadowNode;shVisor.scaling.set(1.05,.78,.25);
+
+const shTorso=sphere('ShTorso',.92,0,.88,0,mats.shadow);
+shTorso.parent=shadowNode;shTorso.scaling.set(.90,1.0,.72);
+const shPack=box('ShPack',.68,.72,.35,0,1.0,.48,mats.shadow);shPack.parent=shadowNode;
+
+const shArmL=cyl('ShArmL',.27,.75,-.53,1.02,0,mats.shadow);shArmL.parent=shadowNode;shArmL.rotation.z=-.25;
+const shArmR=cyl('ShArmR',.27,.75,.53,1.02,0,mats.shadow);shArmR.parent=shadowNode;shArmR.rotation.z=.25;
+const shLegL=cyl('ShLegL',.32,.65,-.23,.35,0,mats.shadow);shLegL.parent=shadowNode;
+const shLegR=cyl('ShLegR',.32,.65,.23,.35,0,mats.shadow);shLegR.parent=shadowNode;
+
+const eyeL=sphere('ShEyeL',.10,-.14,1.66,-.62,mats.shadowEye);eyeL.parent=shadowNode;
+const eyeR=sphere('ShEyeR',.10,.14,1.66,-.62,mats.shadowEye);eyeR.parent=shadowNode;
+
+shadowNode.position.set(0,0,14);
+shadowNode.setEnabled(false);
+let shadowActive=false;
+let shadowWasActive=false;
+
+// El aro dorado provisional fue eliminado: no forma parte de la guía oficial.
+const glow=new B.GlowLayer('glow',scene,{blurKernelSize:32});glow.intensity=.3;
+
+// Tormenta cartoon densa: bancos de nubes en profundidad, techo nuboso y lluvia.
+const darknessClouds=[];
+const stormPuffs=[];
+let stormSeed=27183;
+function rand(){
+  stormSeed=(stormSeed*1664525+1013904223)>>>0;
+  return stormSeed/4294967296;
+}
+function cloudPuff(root,x,y,z,sx,sy,sz,material){
+  // Plano suave orientado siempre a la cámara: elimina el aspecto de roca.
+  const p=B.MeshBuilder.CreatePlane('StormPuff',{
+    width:2.0,
+    height:1.25,
+    sideOrientation:B.Mesh.DOUBLESIDE
+  },scene);
+  p.parent=root;
+  p.position.set(x,y,z);
+  p.scaling.set(sx,sy,1);
+  p.material=material;
+  p.billboardMode=B.Mesh.BILLBOARDMODE_ALL;
+  p.isPickable=false;
+  p.receiveShadows=false;
+  p.visibility=1;
+  p.metadata={
+    ceiling: root.name==='StormCeiling',
+    targetVisibility:1
+  };
+  stormPuffs.push(p);
+  return p;
+}
+function stormBank(z,width=9,height=4.0,depth=3.6,density=22){
+  const root=new B.TransformNode('StormBank',scene);
+  root.position.set(0,0,z);
+  for(let i=0;i<density;i++){
+    const x=(rand()-.5)*width;
+    const y=5.3+rand()*Math.max(1.2,height*.45);
+    const zz=(rand()-.5)*depth;
+    const base=.55+rand()*.62;
+    const material=i%5===0?cloudLight:(i%2?cloudDark:cloudMid);
+    cloudPuff(root,x,y,zz,base*(1.35+rand()*.85),base*(.72+rand()*.35),1,material);
+  }
+  darknessClouds.push(root);
+}
+function stormCeiling(z){
+  const root=new B.TransformNode('StormCeiling',scene);
+  root.position.set(0,0,z);
+  for(let i=0;i<13;i++){
+    const x=(rand()-.5)*12;
+    const zz=(rand()-.5)*8;
+    const base=.90+rand()*.75;
+    cloudPuff(root,x,4.7+rand()*.8,zz,base*2.1,base*.78,1,i%3?cloudDark:cloudMid);
+  }
+  darknessClouds.push(root);
+}
+
+// v26: nubes y bancos de tormenta desactivados para máxima claridad.
+
+// ---------------------------------------------------------
+// VAPOR DE TINIEBLAS (Sueño de Lehi)
+// ---------------------------------------------------------
+// Textura irregular y difusa, formada por varias capas de vapor.
+const mistTex=new B.DynamicTexture('MistOfDarknessTex',{width:192,height:192},scene,false);
+const mctx=mistTex.getContext();
+mctx.clearRect(0,0,192,192);
+const blobs=[
+  [78,92,70,.30],[112,76,62,.27],[98,118,72,.26],[55,116,52,.20],
+  [135,111,48,.18],[61,68,46,.17],[103,48,42,.14],[145,68,40,.13]
+];
+for(const b of blobs){
+  const g=mctx.createRadialGradient(b[0],b[1],3,b[0],b[1],b[2]);
+  g.addColorStop(0,`rgba(26,33,42,${b[3]+.34})`);
+  g.addColorStop(.38,`rgba(30,39,50,${b[3]+.20})`);
+  g.addColorStop(.72,`rgba(38,49,61,${b[3]})`);
+  g.addColorStop(1,'rgba(48,60,72,0)');
+  mctx.fillStyle=g;
+  mctx.fillRect(0,0,192,192);
+}
+mistTex.update();
+
+const mistMat=new B.StandardMaterial('MistOfDarknessMat',scene);
+mistMat.diffuseTexture=mistTex;
+mistMat.opacityTexture=mistTex;
+mistMat.useAlphaFromDiffuseTexture=true;
+mistMat.emissiveColor=B.Color3.FromHexString('#141c26');
+mistMat.diffuseColor=B.Color3.FromHexString('#465562');
+mistMat.specularColor=new B.Color3(0,0,0);
+mistMat.alpha=.80;
+mistMat.backFaceCulling=false;
+
+const mistPatches=[];
+const mistLayers=[];
+const PLAYER_CLEAR_RADIUS=3.20;
+
+function makeMistPatch(x,z,id){
+  const root=new B.TransformNode('MistPatch'+id,scene);
+  root.position.set(x,0,z);
+  root.metadata={baseX:x,baseZ:z,phase:rand()*Math.PI*2,cleared:false};
+
+  for(let i=0;i<4;i++){
+    const layerWidth=6.0+rand()*2.4;
+    const layerHeight=3.6+rand()*2.0;
+    const plane=B.MeshBuilder.CreatePlane('MistLayer',{
+      width:layerWidth,
+      height:layerHeight,
+      sideOrientation:B.Mesh.DOUBLESIDE
+    },scene);
+    plane.parent=root;
+
+    const localX=(rand()-.5)*2.0;
+    const localZ=(rand()-.5)*2.0;
+    const baseY=.42+rand()*1.05;
+    const baseScale=.88+rand()*.30;
+
+    plane.position.set(localX,baseY,localZ);
+    plane.material=mistMat;
+    plane.billboardMode=B.Mesh.BILLBOARDMODE_Y;
+    plane.isPickable=false;
+    plane.visibility=.80+rand()*.14;
+    plane.scaling.set(baseScale,baseScale,1);
+
+    plane.metadata={
+      baseY,
+      localX,
+      localZ,
+      phase:rand()*Math.PI*2,
+      baseScale,
+      visualRadius:(layerWidth*baseScale)*.52,
+      cleared:false,
+      patchRoot:root
+    };
+    mistLayers.push(plane);
+  }
+  mistPatches.push(root);
+}
+
+// Tinieblas repartidas por el mapa: el recorrido se despeja, lo demás sigue oculto.
+let mistId=0;
+// v26: todos los parches bajos de niebla permanecen desactivados.
+
+// ---------------------------------------------------------
+// v26: SIN NIEBLA / SIN FOG OF WAR
+// ---------------------------------------------------------
+const FOG_CLEAR_RADIUS=0;
+function clearFogAtWorld(){ /* sin efecto en v26 */ }
+function updateDiscoveryMask(){ /* sin efecto en v26 */ }
+
+// // Lluvia procedural: no usa imágenes externas.
+const rainTex=new B.DynamicTexture('rainTex',{width:8,height:32},scene,false);
+const rctx=rainTex.getContext();
+rctx.clearRect(0,0,8,32);
+rctx.fillStyle='rgba(215,235,255,.92)';
+rctx.fillRect(3,1,2,29);
+rainTex.update();
+
+const stormEmitter=new B.TransformNode('StormEmitter',scene);
+const rain=new B.ParticleSystem('StormRain',650,scene);
+rain.particleTexture=rainTex;
+rain.emitter=stormEmitter;
+rain.minEmitBox=new B.Vector3(-26,5,-42);
+rain.maxEmitBox=new B.Vector3(26,8,42);
+rain.direction1=new B.Vector3(-.20,-12,.15);
+rain.direction2=new B.Vector3(.15,-15,-.10);
+rain.minLifeTime=.50;rain.maxLifeTime=.90;
+rain.minSize=.035;rain.maxSize=.070;
+rain.emitRate=420;
+rain.color1=new B.Color4(.72,.84,.92,.65);
+rain.color2=new B.Color4(.52,.66,.78,.45);
+rain.gravity=new B.Vector3(0,-6,0);
+rain.blendMode=B.ParticleSystem.BLENDMODE_STANDARD;
+rain.stop();
+
+let nextNaturalLightning=performance.now()+4800;
+
+// ---------------------------------------------------------
+// SISTEMA DE CAMINO GUIADO
+// ---------------------------------------------------------
+// El recorrido avanza desde Z≈14 hasta Z≈-20.
+// Cada checkpoint representa una "voz" o señal que orienta al jugador.
+const GUIDE_STEPS=[
+  {z:15,id:'voz',label:'VOZ SUAVE',text:'No puedes ver todo el camino. Continúa atento hacia adelante.',mode:'voice'},
+  {z:9,id:'luces',label:'LUZ',text:'Una señal luminosa confirma el siguiente tramo.',mode:'light'},
+  {z:3,id:'truenos',label:'TRUENOS',text:'El trueno te advierte que no te apartes del camino principal.',mode:'thunder'},
+  {z:-3,id:'relampagos',label:'RELÁMPAGO',text:'El relámpago ilumina por un instante la siguiente zona.',mode:'lightning'},
+  {z:-9,id:'terremoto',label:'TERREMOTO',text:'El suelo tiembla. Busca el camino firme y continúa.',mode:'quake'},
+  {z:-15,id:'hambre',label:'HAMBRE',text:'La necesidad te recuerda qué cosas son realmente importantes.',mode:'hunger'},
+  {z:-21,id:'honra',label:'HONRA',text:'Has mantenido tu compromiso. Sigue avanzando.',mode:'honor'},
+  {z:-28,id:'gloria',label:'GLORIA',text:'Una claridad mayor confirma que el destino está más cerca.',mode:'glory'},
+  {z:-35,id:'misericordia',label:'MISERICORDIA',text:'Todavía puedes corregir el camino y continuar hacia la meta.',mode:'voice'},
+  {z:-43,id:'trompeta',label:'TROMPETA',text:'El llamado final indica que el destino está próximo.',mode:'trumpet'}
+];
+
+let guideIndex=0;
+let lastGuideTime=0;
+let reachedDestination=false;
+let pathProgress=0;
+
+// Cada banco de nubes conoce una "zona" Z.
+// No desaparecen todas de golpe: se abren alrededor del jugador y delante del camino correcto.
+darknessClouds.forEach((root,i)=>{
+  root.metadata=root.metadata||{};
+  root.metadata.homeZ=[10,2,-7,-15,6,-4,-14][i] ?? 0;
+  root.metadata.baseScaling=root.scaling.clone();
+  root.metadata.cleared=0;
+});
+
+function guideForwardPoint(distance=3.0){
+  return new B.Vector3(player.position.x,.32,player.position.z-distance);
+}
+
+function createGuidingLights(fromZ,toZ,count=5){
+  const nodes=[];
+  const dz=(toZ-fromZ)/Math.max(1,count-1);
+  for(let i=0;i<count;i++){
+    const z=fromZ+dz*i;
+    const p=box('GuideBreadcrumb',.18,.035,.42,0,.19,z,mats.spirit);
+    p.scaling.set(.7,1,.7);
+    const l=new B.PointLight('GuideBreadcrumbLight',new B.Vector3(0,.48,z),scene);
+    l.diffuse=B.Color3.FromHexString('#9ceeff');l.intensity=1.1;l.range=2.0;
+    nodes.push({p,l});
+  }
+  setTimeout(()=>nodes.forEach(n=>{n.p.dispose();n.l.dispose();}),5200);
+}
+
+function revealNextPath(duration=4.5){
+  // En v15 las voces NO borran el camino futuro.
+  // Solo refuerzan señales, relámpagos y luces; las nubes se quitan al caminar.
+  lastGuideTime=performance.now();
+}
+
+function triggerGuide(step){
+  currentGuideEl.textContent=step.label;
+  toast(`📣 ${step.label}`);
+  lastGuideTime=performance.now();
+
+  // Todas las guías abren el corredor delante y registran la posición actual
+  // como parte del camino despejado.
+  revealNextPath(5.8);
+  recordClearedTrail();
+
+  if(step.mode==='voice'){
+    speak(step.text,{pitch:1.04,rate:.90});
+    createGuidingLights(player.position.z-1.2,player.position.z-5.2,4);
+  }
+  else if(step.mode==='light'){
+    createGuidingLights(player.position.z-1.0,player.position.z-6.0,6);
+    flash('#b9f5ff',150,.25);
+    speak(step.text,{pitch:1.07,rate:.90});
+  }
+  else if(step.mode==='thunder'){
+    tone(62,.24,'triangle',.02);setTimeout(()=>tone(56,.16,'sine',.018),70);
+    speak(step.text,{pitch:.84,rate:.92});
+  }
+  else if(step.mode==='lightning'){
+    flash('#ffffff',85,.92);
+    setTimeout(()=>flash('#c9e5f5',55,.45),110);
+    createGuidingLights(player.position.z-1.0,player.position.z-6.5,6);
+    setTimeout(()=>speak(step.text,{pitch:.96,rate:.88}),340);
+  }
+  else if(step.mode==='quake'){
+    quakeTimer=1.35;
+    tone(48,1.0,'triangle',.07);
+    speak(step.text,{pitch:.83,rate:.86});
+  }
+  else if(step.mode==='hunger'){
+    scene.imageProcessingConfiguration.exposure=.74;
+    tone(150,.38,'sine',.025);
+    speak(step.text,{pitch:.92,rate:.88});
+    setTimeout(()=>scene.imageProcessingConfiguration.exposure=1.02,1900);
+  }
+  else if(step.mode==='honor'){
+    tone(660,.22,'sine',.032);tone(880,.32,'sine',.025,.17);
+    createGuidingLights(player.position.z-1.0,player.position.z-5.0,5);
+    speak(step.text,{pitch:1.0,rate:.90});
+  }
+  else if(step.mode==='glory'){
+    flash('#ffe99b',480,.35);
+    spawnGlory();
+    createGuidingLights(player.position.z-1.0,player.position.z-7.0,7);
+    speak(step.text,{pitch:1.08,rate:.90});
+  }
+  else if(step.mode==='trumpet'){
+    tone(392,.30,'sawtooth',.05);
+    tone(523,.30,'sawtooth',.05,.31);
+    tone(659,.48,'sawtooth',.05,.62);
+    createGuidingLights(player.position.z-.8,-49.0,8);
+    speak(step.text,{pitch:.96,rate:.88});
+  }
+}
+
+function updateGuidedPath(){
+  // Progreso visual de 0 a 100%.
+  pathProgress=B.Scalar.Clamp(((18-player.position.z)/(18-(-50)))*100,0,100);
+  pathProgressEl.textContent=`${Math.round(pathProgress)}%`;
+
+  // Activa la próxima guía al cruzar su punto.
+  if(guideIndex<GUIDE_STEPS.length){
+    const step=GUIDE_STEPS[guideIndex];
+    if(player.position.z<=step.z){
+      triggerGuide(step);
+      guideIndex++;
+    }
+  }
+
+  // Destino alcanzado.
+  if(!reachedDestination && player.position.z<=-48.2 && Math.abs(player.position.x)<3.0){
+    reachedDestination=true;
+    currentGuideEl.textContent='DESTINO';
+    destinationBanner.classList.add('show');
+    score+=50;attention=Math.min(100,attention+10);updateHud();
+    revealNextPath(7);
+    flash('#ffe99b',650,.38);spawnGlory();
+    tone(523,.30,'sine',.035);tone(659,.30,'sine',.035,.18);tone(784,.50,'sine',.035,.36);
+    speak('Has llegado al destino. Las señales no caminaron por ti; te ayudaron a reconocer el camino y decidir seguirlo.',{pitch:1.04,rate:.88});
+    setTimeout(()=>destinationBanner.classList.remove('show'),5500);
+  }
+}
+
+// ---------------------------------------------------------
+// v26: SIN DESCUBRIMIENTO POR NIEBLA
+// ---------------------------------------------------------
+const clearedTrail=[];
+function recordClearedTrail(){ /* sin niebla */ }
+function puffInsideClearedTrail(){ return false; }
+function updateCloudClearing(){ /* sin niebla */ }
+
+
+// Jerarquía
+const player=new B.TransformNode('player',scene);
+const recenter=new B.TransformNode('recenter',scene);recenter.parent=player;
+const headingFix=new B.TransformNode('headingFix',scene);headingFix.parent=recenter;
+const axisFix=new B.TransformNode('axisFix',scene);axisFix.parent=headingFix;
+const scaleRoot=new B.TransformNode('scaleRoot',scene);scaleRoot.parent=axisFix;
+
+const camera=new B.FreeCamera('camera',new B.Vector3(0,22,5.8),scene);
+camera.inputs.clear();
+camera.fov=0.86;
+camera.minZ=.08;
+camera.maxZ=220;
+scene.activeCamera=camera;
+
+// v26: personaje sin halo artificial; se muestra con su material original.
+
+// Controles
+const keys=new Set(),touch=new Set();let runTouch=false;
+const keyMap={
+  ArrowUp:'up',KeyW:'up',w:'up',W:'up',
+  ArrowDown:'down',KeyS:'down',s:'down',S:'down',
+  ArrowLeft:'left',KeyA:'left',a:'left',A:'left',
+  ArrowRight:'right',KeyD:'right',d:'right',D:'right'
+};
+window.addEventListener('keydown',e=>{
+  const d=keyMap[e.code]||keyMap[e.key];
+  if(d){keys.add(d);e.preventDefault()}
+  if(e.key==='Shift')keys.add('run');
+},{passive:false});
+window.addEventListener('keyup',e=>{
+  const d=keyMap[e.code]||keyMap[e.key];
+  if(d){keys.delete(d);e.preventDefault()}
+  if(e.key==='Shift')keys.delete('run');
+},{passive:false});
+window.addEventListener('blur',()=>{keys.clear();touch.clear();runTouch=false});
+
+document.querySelectorAll('[data-touch]').forEach(btn=>{
+  const d=btn.dataset.touch;
+  const down=e=>{e.preventDefault();touch.clear();touch.add(d);try{btn.setPointerCapture(e.pointerId)}catch(_){}};
+  const up=e=>{e.preventDefault();touch.delete(d)};
+  btn.addEventListener('pointerdown',down);
+  btn.addEventListener('pointerup',up);
+  btn.addEventListener('pointercancel',up);
+  btn.addEventListener('lostpointercapture',up);
+});
+const runBtn=document.querySelector('[data-run]');
+runBtn?.addEventListener('pointerdown',e=>{e.preventDefault();runTouch=true});
+['pointerup','pointercancel','lostpointercapture'].forEach(ev=>runBtn?.addEventListener(ev,e=>{e.preventDefault();runTouch=false}));
+const pressed=d=>keys.has(d)||touch.has(d);
+
+function getBounds(meshes){
+  scene.render();
+  let min=new B.Vector3(Infinity,Infinity,Infinity),max=new B.Vector3(-Infinity,-Infinity,-Infinity);
+  meshes.forEach(m=>{
+    m.computeWorldMatrix(true);
+    const b=m.getBoundingInfo().boundingBox;
+    min=B.Vector3.Minimize(min,b.minimumWorld);
+    max=B.Vector3.Maximize(max,b.maximumWorld);
+  });
+  return{min,max,size:max.subtract(min),center:min.add(max).scale(.5)};
+}
+
+// Neutraliza completamente la traslación del root/hips.
+// Conserva las rotaciones de huesos (piernas, brazos, torso), pero evita
+// que la animación levante o desplace al personaje entero.
+function stripRootMotion(groups){
+  const rootTracks=[];
+  groups.forEach(g=>g.targetedAnimations?.forEach(ta=>{
+    const anim=ta.animation,target=ta.target;
+    if(!anim||!target||anim.targetProperty!=='position')return;
+    const n=(target.name||'').toLowerCase();
+    if(!/(hips|root|armature)/.test(n))return;
+    const ks=anim.getKeys?.();
+    if(!ks||ks.length<1)return;
+    rootTracks.push({anim,target,keys:ks});
+  }));
+
+  if(!rootTracks.length)return 0;
+
+  // Un mismo punto base para Idle / Walk / Run evita saltos entre acciones.
+  const baseValue=rootTracks[0].keys[0].value;
+  const base=new B.Vector3(baseValue.x,baseValue.y,baseValue.z);
+
+  rootTracks.forEach(({anim,keys})=>{
+    anim.setKeys(keys.map(k=>{
+      const c={...k};
+      c.value=base.clone();
+      if(k.inTangent&&typeof k.inTangent.x==='number')c.inTangent=new B.Vector3(0,0,0);
+      if(k.outTangent&&typeof k.outTangent.x==='number')c.outTangent=new B.Vector3(0,0,0);
+      return c;
+    }));
+  });
+  return rootTracks.length;
+}
+
+let ready=false,idle=null,walk=null,run=null,active=null;
+
+// --- ANCLAJE REAL AL SUELO POR HUESOS ---
+// Preferimos los huesos de los dedos (toe), porque están más cerca de la suela.
+// Si no existen, usamos LeftFoot/RightFoot.
+let groundSkeleton=null;
+let groundMesh=null;
+let groundBones=[];
+let groundBoneMode='ninguno';
+let groundFrame=0;
+
+function findGroundBones(result, meshes){
+  const skeletons=result.skeletons||[];
+  groundSkeleton=skeletons[0]||null;
+  groundMesh=meshes.find(m=>m.skeleton)||meshes[0]||null;
+  if(!groundSkeleton||!groundMesh)return;
+
+  const bones=groundSkeleton.bones||[];
+  const by=(rx)=>bones.filter(b=>rx.test((b.name||'').toLowerCase()));
+
+  const toes=by(/(lefttoe|righttoe|toe[_ .:-]?base|toe)/i);
+  const feet=by(/(leftfoot|rightfoot|foot[_. :-]?[lr]?|foot)/i);
+
+  if(toes.length>=2){
+    groundBones=toes.slice(0,4);
+    groundBoneMode='TOE';
+  }else if(feet.length>=2){
+    groundBones=feet.slice(0,4);
+    groundBoneMode='FOOT';
+  }else if(toes.length){
+    groundBones=toes;
+    groundBoneMode='TOE';
+  }else if(feet.length){
+    groundBones=feet;
+    groundBoneMode='FOOT';
+  }
+}
+
+function boneWorldY(bone){
+  try{
+    groundMesh.computeWorldMatrix(true);
+    groundSkeleton?.computeAbsoluteTransforms?.();
+    const p=bone.getAbsolutePosition(groundMesh);
+    return Number.isFinite(p?.y)?p.y:null;
+  }catch(_){
+    return null;
+  }
+}
+
+// Devuelve la altura real del piso bajo el personaje.
+// La calle está en Y=0 y la banqueta en Y=0.15.
+// Al cruzar el bordillo hacemos una transición suave para que no "salte".
+function surfaceHeightAtPlayer(){
+  // Pisos de edificios/canchas tienen prioridad.
+  for(const f of facilityFloors){
+    if(Math.abs(player.position.x-f.x)<=f.hw && Math.abs(player.position.z-f.z)<=f.hd){
+      return f.y;
+    }
+  }
+
+  const ax=Math.abs(player.position.x);
+
+  // Calles transversales de las distintas cuadras.
+  if(CROSS_STREETS.some(z=>Math.abs(player.position.z-z)<1.36) && ax<13.8){
+    return ROAD_SURFACE_Y;
+  }
+
+  // Calle
+  if(ax <= ROAD_EDGE-0.10) return ROAD_SURFACE_Y;
+
+  // Transición sobre el bordillo
+  if(ax < ROAD_EDGE+0.18){
+    const t=B.Scalar.Clamp((ax-(ROAD_EDGE-0.10))/0.28,0,1);
+    const smooth=t*t*(3-2*t);
+    return B.Scalar.Lerp(ROAD_SURFACE_Y,SIDEWALK_SURFACE_Y,smooth);
+  }
+
+  // Banqueta
+  if(ax <= ROAD_EDGE+WALK_W) return SIDEWALK_SURFACE_Y;
+
+  // Parque pavimentado/verde izquierdo: permitimos explorarlo.
+  if(player.position.x < -(ROAD_EDGE+WALK_W) && player.position.x > -10.1 &&
+     player.position.z > -.2 && player.position.z < 10.6){
+    return .15;
+  }
+
+  // Resto de terreno exterior.
+  return .06;
+}
+
+function pinFeetToGround(){
+  if(!ready||!groundBones.length||!groundMesh)return false;
+
+  const ys=groundBones.map(boneWorldY).filter(v=>v!==null);
+  if(!ys.length)return false;
+
+  // Toe debe quedar prácticamente sobre la superficie real bajo el jugador.
+  // Foot es el tobillo, por eso su objetivo queda un poco más arriba.
+  const surfaceY=surfaceHeightAtPlayer();
+  const boneOffset=groundBoneMode==='TOE'?0.035:0.13;
+  const targetY=surfaceY+boneOffset;
+  const lowest=Math.min(...ys);
+  const correction=targetY-lowest;
+
+  // recenter está por encima del giro de ejes y debajo de player,
+  // por lo que mover Y aquí es un ajuste vertical en coordenadas del mundo.
+  if(Number.isFinite(correction)){
+    // Corrección inmediata: evita que Idle/Walk/Run vuelvan a levantar todo el cuerpo.
+    recenter.position.y += correction;
+    return true;
+  }
+  return false;
+}
+
+function fallbackMeshGround(meshes){
+  // Fallback solo si el GLB no expone huesos de pie.
+  // Se ejecuta pocas veces para no cargar innecesariamente el render.
+  try{
+    meshes.forEach(m=>m.refreshBoundingInfo?.(true));
+    const bb=getBounds(meshes);
+    const target=surfaceHeightAtPlayer();
+    if(Number.isFinite(bb.min.y))recenter.position.y+=(target-bb.min.y);
+    return true;
+  }catch(_){
+    return false;
+  }
+}
+
+function pick(groups,tags){return groups.find(g=>tags.some(t=>(g.name||'').toLowerCase().includes(t)))||null}
+function play(g,speed=1){
+  if(!g)return;
+  if(active===g&&g.isPlaying){g.speedRatio=speed;return}
+  [idle,walk,run].filter(Boolean).forEach(x=>{if(x!==g)x.stop()});
+  g.start(true,speed,g.from,g.to,false);active=g;
+}
+
+
+// ---------------------------------------------------------
+// HUD / VOZ / MINI JUEGO
+// ---------------------------------------------------------
+let score=0;
+let attention=100;
+let collectedLights=0;
+let voiceEnabled=false;
+let selectedSpanishVoice=null;
+let audioCtx=null;
+let quakeTimer=0;
+let temporaryFogBoost=0;
+
+const scoreEl=document.getElementById('score');
+const attentionEl=document.getElementById('attention');
+const lightsCountEl=document.getElementById('lightsCount');
+const listenBtn=document.getElementById('listenBtn');
+const voicesBtn=document.getElementById('voicesBtn');
+const voicesPanel=document.getElementById('voicesPanel');
+const voicesGrid=document.getElementById('voicesGrid');
+const voicesClose=document.getElementById('voicesClose');
+const eventFlash=document.getElementById('eventFlash');
+const decisionEl=document.getElementById('decision');
+const decisionClose=document.getElementById('decisionClose');
+const actionPrompt=document.getElementById('actionPrompt');
+const toastEl=document.getElementById('toast');
+const miniEl=document.getElementById('minigame');
+const miniText=document.getElementById('miniText');
+const sequenceEl=document.getElementById('sequence');
+const miniClose=document.getElementById('miniClose');
+const quickGameEl=document.getElementById('quickGame');
+const quickLocationEl=document.getElementById('quickLocation');
+const quickTitleEl=document.getElementById('quickTitle');
+const quickTextEl=document.getElementById('quickText');
+const quickAreaEl=document.getElementById('quickArea');
+const quickCloseEl=document.getElementById('quickClose');
+const testAgeEl=document.getElementById('testAge');
+const questionOverlay=document.getElementById('questionOverlay');
+const questionAgeEl=document.getElementById('questionAge');
+const questionNumberEl=document.getElementById('questionNumber');
+const questionTextEl=document.getElementById('questionText');
+const questionAnswersEl=document.getElementById('questionAnswers');
+const pathProgressEl=document.getElementById('pathProgress');
+const currentGuideEl=document.getElementById('currentGuide');
+const destinationBanner=document.getElementById('destinationBanner');
+
+// Estados que usa la interacción de la consola.
+let nearMiniStation=false;
+let nearActivity=null;
+let miniOpen=false;
+let quickOpen=false;
+let currentHazardSlow=1;
+let currentHazardName='';
+let lastHazardToast=0;
+
+// HUD: estas funciones se perdieron accidentalmente al integrar v11.
+function updateHud(){
+  if(scoreEl) scoreEl.textContent=String(score);
+  if(attentionEl) attentionEl.textContent=String(Math.round(attention));
+  if(lightsCountEl) lightsCountEl.textContent=`${collectedLights}/3`;
+}
+
+function toast(msg){
+  if(!toastEl) return;
+  toastEl.textContent=msg;
+  toastEl.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t=setTimeout(()=>toastEl.classList.remove('show'),1700);
+}
+
+function loadVoices(){
+  if(!('speechSynthesis' in window))return;
+  const voices=speechSynthesis.getVoices();
+  selectedSpanishVoice=
+    voices.find(v=>/^es[-_](GT|MX|US|ES)/i.test(v.lang)) ||
+    voices.find(v=>/^es/i.test(v.lang)) ||
+    voices[0] || null;
+}
+loadVoices();
+if('speechSynthesis' in window)speechSynthesis.addEventListener?.('voiceschanged',loadVoices);
+
+function ensureAudio(){
+  if(!audioCtx){
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(AC)audioCtx=new AC();
+  }
+  audioCtx?.resume?.();
+  return audioCtx;
+}
+function tone(freq=440,dur=.25,type='sine',vol=.08,delay=0){
+  const ac=ensureAudio();if(!ac)return;
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type=type;o.frequency.value=freq;g.gain.value=0.0001;
+  o.connect(g);g.connect(ac.destination);
+  const t=ac.currentTime+delay;
+  g.gain.exponentialRampToValueAtTime(Math.max(.001,vol),t+.015);
+  g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.start(t);o.stop(t+dur+.03);
+}
+function noiseBurst(dur=.8,vol=.09,lowpass=500){
+  const ac=ensureAudio();if(!ac)return;
+  const frames=Math.max(1,Math.floor(ac.sampleRate*dur));
+  const buf=ac.createBuffer(1,frames,ac.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<frames;i++)d[i]=(Math.random()*2-1)*(1-i/frames);
+  const src=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();
+  src.buffer=buf;f.type='lowpass';f.frequency.value=lowpass;g.gain.value=vol;
+  src.connect(f);f.connect(g);g.connect(ac.destination);src.start();
+}
+function speak(text,opts={}){
+  voiceEnabled=true;
+  if(!('speechSynthesis' in window)){toast('Tu navegador no ofrece síntesis de voz.');return;}
+  loadVoices();
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang=selectedSpanishVoice?.lang||'es-GT';
+  if(selectedSpanishVoice)u.voice=selectedSpanishVoice;
+  u.rate=opts.rate||.92;u.pitch=opts.pitch||1;u.volume=1;
+  speechSynthesis.speak(u);
+}
+function flash(color='#ffffff',ms=130,opacity=.72){
+  eventFlash.style.background=color;
+  eventFlash.style.opacity=String(opacity);
+  eventFlash.classList.add('on');
+  setTimeout(()=>{eventFlash.classList.remove('on');eventFlash.style.opacity='';},ms);
+}
+
+function spawnHail(){
+  for(let i=0;i<22;i++){
+    const h=sphere('hail',.10,
+      player.position.x+(Math.random()*4-2),
+      4+Math.random()*2,
+      player.position.z+(Math.random()*5-2.5),
+      mats.sidewalk);
+    const start=performance.now();
+    const obs=scene.onBeforeRenderObservable.add(()=>{
+      h.position.y-=engine.getDeltaTime()/1000*5.5;
+      if(h.position.y<.05||performance.now()-start>1600){
+        scene.onBeforeRenderObservable.remove(obs);h.dispose();
+      }
+    });
+  }
+}
+function spawnGlory(){
+  for(let i=0;i<16;i++){
+    const p=sphere('gloryParticle',.08,
+      player.position.x+(Math.random()*2.2-1.1),
+      .4+Math.random()*2.1,
+      player.position.z+(Math.random()*2.2-1.1),
+      mats.goal);
+    const start=performance.now();
+    const obs=scene.onBeforeRenderObservable.add(()=>{
+      p.position.y+=engine.getDeltaTime()/1000*.55;
+      p.scaling.scaleInPlace(.993);
+      if(performance.now()-start>1800){
+        scene.onBeforeRenderObservable.remove(obs);p.dispose();
+      }
+    });
+  }
+}
+
+const VOICES=[
+  ['siervos','1. Voz de Sus siervos','Escucha con humildad las palabras de quienes te enseñan y te invitan a volver al camino.'],
+  ['angeles','2. Ministración de ángeles','No estás solo. Hay ayuda y mensajeros que pueden orientarte y fortalecerte.'],
+  ['dios','3. La propia voz de Dios','Detente. Escucha. Recuerda a quién perteneces y hacia dónde quieres llegar.'],
+  ['truenos','4. Voz de los truenos','Hay momentos en que una advertencia fuerte busca despertar tu atención.'],
+  ['relampagos','5. Voz de los relámpagos','Mira con atención. A veces una señal breve ilumina el camino por un instante.'],
+  ['tempestad','6. Voz de las tempestades','En medio de la confusión, busca una impresión clara y no avances sin discernir.'],
+  ['terremoto','7. Voz de los terremotos','Cuando todo parece moverse, recuerda los fundamentos que no cambian.'],
+  ['granizo','8. Voz de fuertes granizadas','Las consecuencias también pueden advertirte que necesitas corregir el rumbo.'],
+  ['hambre','9. Voz de hambres','La escasez puede recordarte qué cosas son realmente necesarias.'],
+  ['pestilencia','10. Voz de pestilencias','La fragilidad de la vida puede llamarte a prepararte, ayudar y volver a lo esencial.'],
+  ['trompeta','11. Gran sonido de trompeta','Prepárate. Es tiempo de responder al llamado y reunir a tu familia.'],
+  ['juicio','12. Voz del juicio','Tus decisiones tienen consecuencias. Elige pensando en aquello que verdaderamente importa.'],
+  ['misericordia','13. Voz de misericordia','Puedes corregir el camino. La misericordia sigue invitándote a regresar.'],
+  ['gloria','14. Voz de gloria','Hay una luz y una meta mayor que lo inmediato. Sigue avanzando hacia ella.'],
+  ['honor','15. Voz de honor','La fidelidad y el servicio tienen valor, aun cuando nadie más los vea.'],
+  ['riquezas','16. Riquezas de la vida eterna','No cambies una herencia eterna por una distracción momentánea.']
+];
+
+function triggerVoiceEvent(id){
+  ensureAudio();
+  const row=VOICES.find(v=>v[0]===id);if(!row)return;
+  const text=row[2];
+  toast(row[1]);
+
+  if(id==='siervos'){tone(520,.18,'sine',.05);speak(text,{pitch:.95});}
+  else if(id==='angeles'){tone(880,.28,'sine',.05);tone(1175,.36,'sine',.035,.16);flash('#b9f4ff',180,.28);speak(text,{pitch:1.12});}
+  else if(id==='dios'){tone(180,.45,'sine',.04);speak(text,{pitch:.78,rate:.82});}
+  else if(id==='truenos'){tone(62,.24,'triangle',.02);setTimeout(()=>tone(56,.16,'sine',.018),70);flash('#cbd6df',60,.20);speak(text,{pitch:.82,rate:.92});}
+  else if(id==='relampagos'){noiseBurst(.20,.14,2200);flash('#ffffff',75,.88);speak(text,{rate:.88});}
+  else if(id==='tempestad'){noiseBurst(2.0,.085,850);temporaryFogBoost=.018;speak(text,{rate:.88});setTimeout(()=>temporaryFogBoost=0,2500);}
+  else if(id==='terremoto'){quakeTimer=1.6;tone(46,1.25,'triangle',.09);speak(text,{pitch:.85});}
+  else if(id==='granizo'){spawnHail();noiseBurst(.75,.07,1700);speak(text);}
+  else if(id==='hambre'){scene.imageProcessingConfiguration.exposure=.72;speak(text,{rate:.88});setTimeout(()=>scene.imageProcessingConfiguration.exposure=1.02,2200);}
+  else if(id==='pestilencia'){flash('#79b86a',500,.30);speak(text,{pitch:.92});}
+  else if(id==='trompeta'){tone(392,.34,'sawtooth',.055);tone(523,.34,'sawtooth',.055,.34);tone(659,.55,'sawtooth',.055,.68);speak(text,{pitch:.95});}
+  else if(id==='juicio'){flash('#b93434',250,.35);tone(95,.65,'square',.035);speak(text,{pitch:.78});}
+  else if(id==='misericordia'){flash('#ffd7a0',350,.22);tone(660,.35,'sine',.035);speak(text,{pitch:1.08});}
+  else if(id==='gloria'){flash('#ffe789',550,.34);spawnGlory();speak(text,{pitch:1.06});}
+  else if(id==='honor'){tone(740,.22,'sine',.04);tone(988,.36,'sine',.03,.16);speak(text);}
+  else if(id==='riquezas'){spawnGlory();tone(880,.28,'sine',.04);speak(text,{pitch:1.04});}
+}
+
+VOICES.forEach(([id,label])=>{
+  const b=document.createElement('button');
+  b.type='button';b.textContent=label;b.onclick=()=>triggerVoiceEvent(id);
+  voicesGrid.appendChild(b);
+});
+voicesBtn?.addEventListener('click',()=>{
+  ensureAudio();voiceEnabled=true;voicesPanel.classList.add('show');voicesPanel.setAttribute('aria-hidden','false');
+  speak('Selecciona una de las voces o señales para probar cómo puede sentirse dentro del juego.',{pitch:1.03});
+});
+voicesClose?.addEventListener('click',()=>{voicesPanel.classList.remove('show');voicesPanel.setAttribute('aria-hidden','true');});
+
+function nearestUncollectedLight(){
+  let best=null,bestD=Infinity;
+  for(const l of spiritLights){
+    if(l.collected)continue;
+    const d=Math.hypot(player.position.x-l.x,player.position.z-l.z);
+    if(d<bestD){best=l;bestD=d;}
+  }
+  return best;
+}
+function listenForGuidance(){
+  ensureAudio();voiceEnabled=true;
+
+  // Si todavía quedan checkpoints, la impresión apunta hacia el siguiente.
+  if(guideIndex<GUIDE_STEPS.length){
+    const step=GUIDE_STEPS[guideIndex];
+    currentGuideEl.textContent='IMPRESIÓN';
+    revealNextPath(3.6);
+    createGuidingLights(player.position.z-.8,Math.max(step.z,player.position.z-5.0),4);
+    speak('Sientes que debes continuar con atención hacia adelante. No necesitas ver todo el camino; busca la siguiente señal.',{pitch:1.06,rate:.91});
+    toast('👂 Impresión: continúa atento');
+    return;
+  }
+
+  const l=nearestUncollectedLight();
+  if(!l){
+    speak('El destino está cerca. Continúa siguiendo la claridad que queda delante.');
+    return;
+  }
+  const dx=l.x-player.position.x,dz=l.z-player.position.z;
+  let phrase='Detente y observa. Hay una señal cerca.';
+  if(Math.abs(dz)>Math.abs(dx)) phrase=dz<0?'Sientes que debes continuar un poco más adelante.':'Sientes que quizá dejaste atrás una impresión importante.';
+  else phrase=dx<0?'Sientes una impresión suave hacia tu izquierda.':'Sientes una impresión suave hacia tu derecha.';
+  l.orb.scaling.set(1.45,1.0,1.45);
+  setTimeout(()=>l.orb?.scaling?.set?.(1,1,1),650);
+  revealNextPath(3.2);
+  flash('#8cecff',140,.18);
+  speak(phrase,{pitch:1.07});
+  toast('👂 Impresión recibida');
+}
+listenBtn?.addEventListener('click',listenForGuidance);
+
+function collectSpiritLights(){
+  for(const l of spiritLights){
+    if(l.collected)continue;
+    const dx=player.position.x-l.x,dz=player.position.z-l.z;
+    if(dx*dx+dz*dz<.72*.72){
+      l.collected=true;l.orb.setEnabled(false);l.light.dispose();
+      collectedLights++;score+=10;attention=Math.min(100,attention+4);updateHud();
+      toast(`✨ Luz encontrada +10`);
+      if(collectedLights===1)speak('Bien. Una luz pequeña puede mostrarte el siguiente paso.');
+      if(collectedLights===3){score+=15;updateHud();speak('Has seguido las tres luces. Busca ahora el desafío en la banqueta.');}
+    }
+  }
+}
+
+const QUESTION_BANK={
+  '8':[
+    {q:'Mientras juegas, recuerdas que prometiste ayudar en casa. ¿Qué haces?',a:[
+      ['Ignoro el recuerdo y sigo jugando.',-30],['Termino lo que hago y voy después.',5],['Pauso el juego y ayudo ahora.',15],['Ayudo ahora y pregunto si alguien más necesita ayuda.',25]]},
+    {q:'Un amigo se burla de otro niño. Sientes que deberías hacer algo.',a:[
+      ['Me río también.',-30],['No digo nada.',5],['Le digo que pare.',15],['Defiendo al niño y busco a un adulto si hace falta.',25]]},
+    {q:'Antes de dormir recuerdas que querías orar.',a:[
+      ['Lo ignoro.',-30],['Digo algo rápido sin pensar.',5],['Me detengo y oro con atención.',15],['Oro con atención y doy gracias por alguien específico.',25]]}
+  ],
+  '12':[
+    {q:'Recibes una notificación mientras estabas ayudando a tu familia. ¿Qué haces?',a:[
+      ['Dejo todo para revisar el teléfono.',-30],['La reviso rápidamente y vuelvo.',5],['Termino primero lo que estaba haciendo.',15],['Termino, ayudo un poco más y luego reviso el teléfono.',25]]},
+    {q:'Tus amigos quieren ver un video que sabes que no te hace sentir bien.',a:[
+      ['Lo veo para no quedar mal.',-30],['Me quedo pero intento no mirar.',5],['Digo que prefiero otra cosa.',15],['Propongo algo divertido que todos puedan disfrutar.',25]]},
+    {q:'Sientes una impresión de hablar con alguien que está solo.',a:[
+      ['La ignoro.',-30],['Lo saludo desde lejos.',5],['Me acerco y converso.',15],['Me acerco, escucho y busco una forma concreta de ayudar.',25]]}
+  ],
+  '14':[
+    {q:'Estás por publicar algo hiriente porque estás molesto. ¿Qué haces?',a:[
+      ['Lo publico inmediatamente.',-30],['Lo publico y después veo si lo borro.',5],['No lo publico y espero a calmarme.',15],['No lo publico, me calmo y busco resolver el problema directamente.',25]]},
+    {q:'Tienes una tarea importante pero tus amigos te invitan a jugar en línea.',a:[
+      ['Ignoro la tarea.',-30],['Juego primero y veo si me alcanza el tiempo.',5],['Termino la tarea y luego juego.',15],['Organizo mi tiempo, termino bien y después disfruto sin preocupación.',25]]},
+    {q:'Notas que un amigo está tomando una mala decisión.',a:[
+      ['Lo animo a seguir.',-30],['No me meto.',5],['Le digo con respeto que me preocupa.',15],['Le hablo con respeto y me quedo disponible para ayudarlo.',25]]}
+  ],
+  'adult':[
+    {q:'Llegas cansado y sientes que alguien de tu familia necesita hablar.',a:[
+      ['Lo evito y me encierro en el teléfono.',-30],['Le digo que después.',5],['Me detengo y escucho unos minutos.',15],['Escucho con atención y busco cómo ayudar de forma concreta.',25]]},
+    {q:'Tienes mucho trabajo pero habías apartado tiempo para una responsabilidad espiritual o familiar.',a:[
+      ['La cancelo sin pensarlo.',-30],['La pospongo indefinidamente.',5],['Reorganizo lo posible para cumplir.',15],['Reorganizo prioridades y cumplo de manera consciente.',25]]},
+    {q:'Percibes que llevas varios días reaccionando con impaciencia.',a:[
+      ['Culpo a los demás.',-30],['Lo reconozco pero no hago nada.',5],['Busco corregir mi manera de responder.',15],['Me arrepiento, reparo el daño y establezco una acción concreta para cambiar.',25]]}
+  ]
+};
+
+const questionZones=[
+  {x:-3.9,z:3.1,done:false,index:0},
+  {x:3.9,z:-6.2,done:false,index:1},
+  {x:-3.9,z:-15.0,done:false,index:2}
+];
+let questionOpen=false;
+
+function currentQuestion(zoneIndex){
+  const age=testAgeEl?.value||'12';
+  const bank=QUESTION_BANK[age]||QUESTION_BANK['12'];
+  return bank[zoneIndex%bank.length];
+}
+function openQuestion(zone){
+  if(questionOpen||miniOpen||decisionEl.classList.contains('show'))return;
+  const q=currentQuestion(zone.index);
+  questionOpen=true;
+  questionAgeEl.textContent=`EDAD ${testAgeEl?.value==='adult'?'ADULTO':testAgeEl?.value+' AÑOS'}`;
+  questionNumberEl.textContent=`${zone.index+1}/3`;
+  questionTextEl.textContent=q.q;
+  questionAnswersEl.innerHTML='';
+  q.a.forEach(([label,value])=>{
+    const b=document.createElement('button');
+    b.type='button';
+    const sign=value>0?`+${value}`:String(value);
+    b.innerHTML=`${label}<b>${sign}</b>`;
+    b.onclick=()=>{
+      if(value<0){
+        attention=B.Scalar.Clamp(attention+value,0,100);
+        score=Math.max(0,score-5);
+        toast(`⚠️ Atención ${value}`);
+      }else{
+        attention=B.Scalar.Clamp(attention+Math.min(value,10),0,100);
+        score+=value;
+        toast(`✅ +${value} puntos`);
+      }
+      updateHud();
+      zone.done=true;
+      questionOpen=false;
+      questionOverlay.classList.remove('show');
+      questionOverlay.setAttribute('aria-hidden','true');
+      if(value>=15)speak('Buena decisión. Continúa atento a las siguientes impresiones.');
+      else if(value<0)speak('La distracción oscurece el camino. Puedes corregir tu decisión en el siguiente momento.');
+    };
+    questionAnswersEl.appendChild(b);
+  });
+  questionOverlay.classList.add('show');
+  questionOverlay.setAttribute('aria-hidden','false');
+  speak(q.q,{rate:.94});
+}
+function updateQuestions(){
+  if(questionOpen||miniOpen)return;
+  for(const zone of questionZones){
+    if(zone.done)continue;
+    const dx=player.position.x-zone.x,dz=player.position.z-zone.z;
+    if(dx*dx+dz*dz<1.55*1.55){openQuestion(zone);break;}
+  }
+}
+
+let nearDecision=false;
+let decisionCooldown=false;
+function updateDecisionStation(){
+  if(decisionCooldown)return;
+  const dx=player.position.x-(-5.15),dz=player.position.z-11.2;
+  nearDecision=(dx*dx+dz*dz)<1.55*1.55;
+  // Si no estamos cerca de la consola, reutilizamos prompt para decisión.
+  if(nearDecision&&!nearMiniStation&&!miniOpen){
+    actionPrompt.textContent='E · TOMAR DECISIÓN';
+    actionPrompt.classList.add('show');
+  }
+}
+function openDecision(){
+  if(decisionCooldown)return;
+  decisionEl.classList.add('show');decisionEl.setAttribute('aria-hidden','false');
+}
+function closeDecision(){
+  decisionEl.classList.remove('show');decisionEl.setAttribute('aria-hidden','true');
+}
+decisionClose?.addEventListener('click',closeDecision);
+document.querySelectorAll('[data-decision]').forEach(btn=>btn.addEventListener('click',()=>{
+  const delta=Number(btn.dataset.decision)||0;
+  attention=B.Scalar.Clamp(attention+delta,0,100);
+  if(delta<0){score=Math.max(0,score-5);toast(`⚠️ Atención ${delta}`);speak('La distracción hace más difícil percibir la guía.');}
+  else if(delta===15){score+=10;toast('👂 Mejor decisión +10');speak('Al detenerte y escuchar, la señal se vuelve más clara.');}
+  else{score+=20;toast('✨ Excelente decisión +20');speak('Seguiste la impresión y corregiste tu rumbo.');}
+  updateHud();closeDecision();decisionCooldown=true;nearDecision=false;
+  setTimeout(()=>decisionCooldown=false,9000);
+}));
+
+function finishQuickGame(success,zone){
+  if(success){
+    score+=15;attention=Math.min(100,attention+4);
+    toast('🎮 Mini juego superado +15');
+    if(zone)zone.done=true;
+  }else{
+    attention=Math.max(0,attention-5);
+    toast('⚠️ Distracción / intento fallido −5 atención');
+  }
+  updateHud();
+  setTimeout(closeQuickGame,850);
+}
+function quickButtons(options,correct,zone){
+  quickAreaEl.innerHTML='';
+  options.forEach((txt,i)=>{
+    const b=document.createElement('button');b.type='button';b.textContent=txt;
+    b.onclick=()=>finishQuickGame(i===correct,zone);
+    quickAreaEl.appendChild(b);
+  });
+}
+function openQuickGame(zone){
+  if(!zone||quickOpen||miniOpen)return;
+  quickOpen=true;quickGameEl.classList.add('show');quickGameEl.setAttribute('aria-hidden','false');
+  quickLocationEl.textContent=zone.name;
+  quickAreaEl.innerHTML='';
+
+  if(zone.type==='soccer'){
+    quickTitleEl.textContent='⚽ Tiro al arco';
+    quickTextEl.textContent='El portero se lanzó hacia la izquierda. ¿A dónde disparas?';
+    quickButtons(['⬅ Izquierda','⬆ Centro','➡ Derecha'],2,zone);
+  }else if(zone.type==='basket'){
+    quickTitleEl.textContent='🏀 Tiro libre';
+    quickTextEl.textContent='Elige el lanzamiento con mejor control.';
+    quickButtons(['Lanzar muy fuerte','Apuntar y soltar suave','Lanzar sin mirar'],1,zone);
+  }else if(zone.type==='library'){
+    quickTitleEl.textContent='📚 Buscar el libro';
+    quickTextEl.textContent='Encuentra el título relacionado con historia familiar.';
+    quickButtons(['Videojuegos','Mis antepasados','Autos rápidos','Moda'],1,zone);
+  }else if(zone.type==='triage'){
+    quickTitleEl.textContent='🏥 Triage';
+    quickTextEl.textContent='Llega una persona con dificultad para respirar. ¿Qué haces primero?';
+    quickButtons(['Esperar varias horas','Priorizar atención inmediata','Mandarla a farmacia'],1,zone);
+  }else if(zone.type==='dentist'){
+    quickTitleEl.textContent='🦷 Limpieza dental';
+    quickTextEl.textContent='¿Qué acción ayuda mejor a retirar placa sin dañar el diente?';
+    quickButtons(['Cepillado cuidadoso','Golpear el diente','Usar solo agua'],0,zone);
+  }else if(zone.type==='family'){
+    quickTitleEl.textContent='🌳 Historia Familiar';
+    quickTextEl.textContent='¿Qué dato ayuda más a identificar correctamente a un antepasado?';
+    quickButtons(['Solo el apodo','Nombre, fecha y lugar','Color favorito'],1,zone);
+  }else{
+    quickTitleEl.textContent='🎯 Actividad';
+    quickTextEl.textContent='Elige la mejor opción.';
+    quickButtons(['Ignorar','Observar y decidir','Salir corriendo'],1,zone);
+  }
+}
+function closeQuickGame(){
+  quickOpen=false;quickGameEl.classList.remove('show');quickGameEl.setAttribute('aria-hidden','true');
+}
+quickCloseEl?.addEventListener('click',closeQuickGame);
+
+function updateActivities(){
+  nearActivity=null;
+  let best=Infinity;
+  for(const zone of activityZones){
+    const d=Math.hypot(player.position.x-zone.x,player.position.z-zone.z);
+    if(d<zone.r && d<best){nearActivity=zone;best=d;}
+  }
+  if(nearActivity&&!quickOpen&&!miniOpen&&!questionOpen){
+    actionPrompt.textContent=`E · ${nearActivity.name}`;
+    actionPrompt.classList.add('show');
+  }
+}
+
+function updateDistractions(dt){
+  if(quickOpen||miniOpen||questionOpen)return;
+  for(const d of distractionZones){
+    if(!d.active)continue;
+    const dist=Math.hypot(player.position.x-d.x,player.position.z-d.z);
+    if(dist<d.r){
+      d.time+=dt;
+      if(d.time>2.2){
+        attention=Math.max(0,attention-d.rate*dt);
+        updateHud();
+      }
+    }else{
+      d.time=Math.max(0,d.time-dt*1.8);
+    }
+  }
+}
+
+function updateHazards(){
+  currentHazardSlow=1;currentHazardName='';
+  for(const h of hazardZones){
+    const nx=(player.position.x-h.x)/h.rx;
+    const nz=(player.position.z-h.z)/h.rz;
+    const inside=nx*nx+nz*nz<1;
+    if(inside){
+      currentHazardSlow=Math.min(currentHazardSlow,.42);
+      currentHazardName=h.name;
+      if(!h.inside && performance.now()-lastHazardToast>1200){
+        h.inside=true;lastHazardToast=performance.now();
+        toast(`🌧️ ${h.name}: movimiento lento`);
+        score=Math.max(0,score-2);updateHud();
+      }
+    }else h.inside=false;
+  }
+}
+
+const miniSymbols=['✨','📖','🤝'];
+let miniSequence=[],miniInput=[],miniReady=false;
+
+function createSequence(){
+  miniSequence=Array.from({length:3},()=>miniSymbols[Math.floor(Math.random()*miniSymbols.length)]);
+}
+function openMiniGame(){
+  if(miniOpen)return;
+  miniOpen=true;miniEl.classList.add('show');miniEl.setAttribute('aria-hidden','false');
+  miniInput=[];miniReady=false;createSequence();
+  miniText.textContent='Memoriza la secuencia…';
+  sequenceEl.textContent=miniSequence.join('  ');
+  setTimeout(()=>{
+    if(!miniOpen)return;
+    sequenceEl.textContent='❔  ❔  ❔';
+    miniText.textContent='Ahora repítela en el mismo orden.';
+    miniReady=true;
+  },1800);
+}
+function closeMiniGame(){
+  miniOpen=false;miniReady=false;miniEl.classList.remove('show');miniEl.setAttribute('aria-hidden','true');
+}
+miniClose?.addEventListener('click',closeMiniGame);
+document.querySelectorAll('[data-symbol]').forEach(btn=>btn.addEventListener('click',()=>{
+  if(!miniReady)return;
+  const symbol=btn.dataset.symbol;
+  const idx=miniInput.length;
+  if(symbol!==miniSequence[idx]){
+    attention=Math.max(0,attention-6);updateHud();
+    miniReady=false;miniText.textContent='No era esa secuencia. Observa otra vez.';
+    sequenceEl.textContent='⚠️';
+    speak('No te preocupes. Observa de nuevo y presta atención.');
+    setTimeout(()=>{if(miniOpen){miniInput=[];createSequence();sequenceEl.textContent=miniSequence.join('  ');miniText.textContent='Memoriza la nueva secuencia…';setTimeout(()=>{if(miniOpen){sequenceEl.textContent='❔  ❔  ❔';miniText.textContent='Repítela.';miniReady=true;}},1500);}},900);
+    return;
+  }
+  miniInput.push(symbol);
+  if(miniInput.length===miniSequence.length){
+    score+=25;attention=Math.min(100,attention+8);updateHud();
+    miniReady=false;sequenceEl.textContent='✅';
+    miniText.textContent='¡Correcto! +25 puntos';
+    toast('🎮 Mini juego superado +25');
+    speak('Muy bien. Recordaste la secuencia y mantuviste tu atención.');
+    setTimeout(closeMiniGame,1300);
+  }
+}));
+
+window.addEventListener('keydown',e=>{
+  if(e.key!=='e'&&e.key!=='E')return;
+  if(nearActivity&&!quickOpen&&!miniOpen){
+    e.preventDefault();openQuickGame(nearActivity);return;
+  }
+  if(nearMiniStation&&!miniOpen&&!quickOpen){
+    e.preventDefault();openMiniGame();return;
+  }
+  if(nearDecision&&!miniOpen&&!quickOpen){
+    e.preventDefault();openDecision();
+  }
+});
+
+function updateMiniStation(){
+  const dx=player.position.x-miniStation.position.x;
+  const dz=player.position.z-miniStation.position.z;
+  nearMiniStation=(dx*dx+dz*dz)<1.55*1.55;
+  if(nearMiniStation&&!miniOpen){
+    actionPrompt.textContent='E · JUGAR EN CONSOLA';
+    actionPrompt.classList.add('show');
+  }else if(!nearDecision){
+    actionPrompt.classList.remove('show');
+  }
+}
+
+function updateShadow(dt){
+  const shouldBeActive=attention<=60;
+
+  if(shouldBeActive&&!shadowActive){
+    shadowActive=true;
+    shadowNode.setEnabled(true);
+    shadowNode.position.set(player.position.x,0,player.position.z+5.0);
+    toast('⚠️ La sombra ha aparecido');
+    tone(72,.8,'triangle',.06);
+    if(voiceEnabled)speak('Tu atención ha bajado. La sombra ahora puede encontrarte.',{pitch:.82});
+  }else if(!shouldBeActive&&shadowActive){
+    shadowActive=false;
+    shadowNode.setEnabled(false);
+    toast('✨ Recuperaste claridad; la sombra se retira.');
+  }
+
+  if(!shadowActive)return;
+
+  const dx=player.position.x-shadowNode.position.x;
+  const dz=player.position.z-shadowNode.position.z;
+  const dist=Math.max(.001,Math.hypot(dx,dz));
+
+  // Entre 60 y 40: avanza torpemente y con pausas.
+  // Por debajo de 40: acelera y produce urgencia.
+  let speed=attention<40?4.45:1.15;
+  const paused=attention>=40 && Math.sin(performance.now()/720)<-.35;
+  if(!paused){
+    shadowNode.position.x+=(dx/dist)*speed*dt;
+    shadowNode.position.z+=(dz/dist)*speed*dt;
+  }
+  shadowNode.rotation.y=Math.atan2(dx,dz);
+
+  // Solo una consecuencia cercana; caminar normalmente NO baja atención.
+  if(dist<1.35){
+    attention=Math.max(0,attention-dt*2.1);
+    updateHud();
+  }
+}
+updateHud();
+
+
+function updateDarkness(){
+  // Vista completamente limpia en v26.
+  scene.fogMode=B.Scene.FOGMODE_NONE;
+}
+
+async function loadCharacter(){
+  try{
+    setStatus('Optimizando escena y cargando personaje…');
+
+    // Todo lo construido hasta aquí es escenario estático salvo vapor/partículas.
+    // Congelar matrices reduce drásticamente trabajo por cuadro.
+    for(const m of scene.meshes){
+      const n=(m.name||'');
+      if(/MistLayer|StormPuff|hail|gloryParticle/i.test(n))continue;
+      try{m.freezeWorldMatrix();}catch(_){}
+    }
+
+    // Quitamos miles de objetos estáticos del shadow map; el personaje se añadirá después.
+    const shadowMap=shadows.getShadowMap();
+    if(shadowMap?.renderList)shadowMap.renderList.length=0;
+
+    player.position.set(0,0,0);
+    player.rotation.set(0,0,0);
+    recenter.position.set(0,0,0);
+    headingFix.rotation.set(0,0,0);
+    axisFix.rotation.set(0,0,0);
+    scaleRoot.scaling.setAll(1);
+
+    const r=await B.SceneLoader.ImportMeshAsync('','assets/models/','bebe_azul_animado.glb',scene);
+    const imported=new Set(r.meshes);
+    r.meshes.filter(m=>!m.parent||!imported.has(m.parent)).forEach(m=>m.parent=scaleRoot);
+
+    const meshes=r.meshes.filter(m=>m.getTotalVertices?.()>0);
+    if(!meshes.length)throw new Error('GLB sin geometría');
+    meshes.forEach(m=>{
+      m.receiveShadows=true;shadows.addShadowCaster(m);
+      try{
+        m.enableEdgesRendering(.997);
+        m.edgesWidth=1.35;
+        m.edgesColor=new B.Color4(.01,.02,.04,.72);
+      }catch(_){}
+    });
+
+
+
+    // Detectar los huesos reales que usaremos para tocar el suelo.
+    findGroundBones(r,meshes);
+
+    // Detectar el eje largo igual que en v4.
+    let b=getBounds(meshes);
+    const s=b.size;
+    const tallest=s.y>=s.x&&s.y>=s.z?'y':(s.z>=s.x?'z':'x');
+
+    // v4 ya lo dejó vertical pero cabeza-abajo.
+    // Aquí usamos EL GIRO OPUESTO al de v4.
+    if(tallest==='z'){
+      axisFix.rotation.x=Math.PI/2;
+    }else if(tallest==='x'){
+      axisFix.rotation.z=Math.PI/2;
+    }else{
+      // Si ya viene vertical sobre Y pero invertido.
+      axisFix.rotation.z=Math.PI;
+    }
+
+    // El cambio vertical puede invertir el frente; corregimos el frente en Y.
+    headingFix.rotation.y=Math.PI;
+
+    // Tamaño.
+    b=getBounds(meshes);
+    scaleRoot.scaling.setAll(1.75/Math.max(.001,b.size.y));
+
+    const groups=r.animationGroups||[];
+    const rootTracks=stripRootMotion(groups);
+
+    idle=pick(groups,['idle','stand'])||groups[0]||null;
+    walk=pick(groups,['walk'])||groups[1]||idle;
+    run=pick(groups,['run'])||groups[2]||walk;
+
+    // Aplicar primero la pose Idle real y DESPUÉS calcular el piso.
+    if(idle){
+      play(idle,1);
+      idle.goToFrame?.(idle.from ?? 0);
+      scene.render();
+    }
+
+    // Centrado definitivo con la pose y el root ya corregidos.
+    b=getBounds(meshes);
+    recenter.position.set(-b.center.x,-b.min.y,-b.center.z);
+
+    // Segunda verificación: garantiza que el punto más bajo quede exactamente en Y=0.
+    scene.render();
+    b=getBounds(meshes);
+    recenter.position.y-=b.min.y;
+
+    player.position.set(0,0,6);
+
+    ready=true;
+
+    // Calibración REAL con la pose Idle ya activa.
+    scene.render();
+    let grounded=pinFeetToGround();
+    if(!grounded)grounded=fallbackMeshGround(meshes);
+    scene.render();
+    pinFeetToGround();
+
+    const boneNames=groundBones.map(b=>b.name).join(', ')||'sin huesos de pie detectados';
+    setStatus(`DENTAL DETALLADO v27 · ${groundBoneMode} · ${boneNames}`);
+    loadingEl.classList.add('hidden');
+
+    // Primera impresión, poco después de iniciar.
+    setTimeout(()=>{
+      currentGuideEl.textContent='ESCUCHA';
+      speak('No puedes ver todo el camino. Avanza con atención y busca las señales que vayan apareciendo.',{pitch:1.05,rate:.91});
+      revealNextPath(4.0);
+    },900);
+  }catch(e){
+    console.error(e);
+    setStatus('Error al preparar el Bebé Azul.',true);
+  }
+}
+
+const velocity=new B.Vector3();
+scene.onBeforeRenderObservable.add(()=>{
+  const dt=Math.min(.022,engine.getDeltaTime()/1000);
+
+  const uiBlocking=questionOpen||miniOpen||quickOpen||decisionEl.classList.contains('show')||voicesPanel.classList.contains('show');
+  let dx=0,dz=0;
+  if(!uiBlocking&&pressed('up'))dz-=1;
+  if(!uiBlocking&&pressed('down'))dz+=1;
+
+  // CORRECCIÓN solicitada:
+  // en esta cámara el control anterior estaba invertido.
+  if(!uiBlocking&&pressed('left'))dx+=1;
+  if(!uiBlocking&&pressed('right'))dx-=1;
+
+  const len=Math.hypot(dx,dz);
+  if(len){dx/=len;dz/=len}
+
+  const running=keys.has('run')||runTouch;
+  updateHazards();
+  const baseSpeed=running?6.2:3.75;
+  const speed=baseSpeed*currentHazardSlow;
+
+  const tx=ready?dx*speed:0;
+  const tz=ready?dz*speed:0;
+
+  const response=1-Math.exp(-9*dt);
+  velocity.x=B.Scalar.Lerp(velocity.x,tx,response);
+  velocity.z=B.Scalar.Lerp(velocity.z,tz,response);
+
+  if(!dx&&Math.abs(velocity.x)<.008)velocity.x=0;
+  if(!dz&&Math.abs(velocity.z)<.008)velocity.z=0;
+
+  // Movimiento con colisiones: primero X y luego Z para poder deslizarse.
+  let nextX=B.Scalar.Clamp(player.position.x+velocity.x*dt,-24.5,24.5);
+  if(!blockedAt(nextX,player.position.z)){
+    player.position.x=nextX;
+  }else{
+    velocity.x=0;
+  }
+
+  let nextZ=B.Scalar.Clamp(player.position.z+velocity.z*dt,-55,24);
+  if(!blockedAt(player.position.x,nextZ)){
+    player.position.z=nextZ;
+  }else{
+    velocity.z=0;
+  }
+
+  const moving=Math.hypot(velocity.x,velocity.z)>.03;
+  if(moving){
+    const desired=Math.atan2(velocity.x,velocity.z)-Math.PI;
+    let diff=((desired-player.rotation.y+Math.PI)%(Math.PI*2))-Math.PI;
+    player.rotation.y+=diff*(1-Math.exp(-10*dt));
+    play(running?(run||walk):walk,running?1.42:1.24);
+  }else{
+    play(idle,1);
+  }
+
+  // Recalcular el contacto con el suelo DESPUÉS de que la animación haya cambiado la pose.
+  // Esto impide que el personaje vuelva a quedar flotando al cambiar Idle/Walk/Run.
+  groundFrame++;
+  if(groundBones.length){
+    pinFeetToGround();
+  }else if(groundFrame%8===0){
+    // Si no hay nombres de huesos compatibles, usamos bounds deformados como respaldo.
+    fallbackMeshGround(scene.meshes.filter(m=>m.skeleton));
+  }
+
+  collectSpiritLights();
+  updateQuestions();
+  updateMiniStation();
+  updateDecisionStation();
+  updateActivities();
+  updateDistractions(dt);
+  updateShadow(dt);
+  updateGuidedPath();
+  updateCloudClearing();
+  updateDarkness();
+
+  // Vista intermedia: se aprecia mejor el detalle sin perder el sentido de laberinto.
+// Cámara centrada: el Bebé permanece exactamente en el centro de la pantalla.
+const baseCamX=player.position.x;
+const baseCamY=22.0;
+const baseCamZ=player.position.z+5.8;
+
+if(quakeTimer>0){
+  quakeTimer-=dt;
+  const q=.10*Math.min(1,quakeTimer);
+  camera.position.set(
+    baseCamX+(Math.random()-.5)*q,
+    baseCamY+(Math.random()-.5)*q,
+    baseCamZ+(Math.random()-.5)*q
+  );
+}else{
+  camera.position.set(baseCamX,baseCamY,baseCamZ);
+}
+
+// El objetivo ES el personaje, no un punto adelantado.
+// Así el personaje queda fijo en el centro y el mundo se mueve alrededor.
+camera.setTarget(new B.Vector3(
+  player.position.x,
+  .82,
+  player.position.z
+));
+});
+
+engine.runRenderLoop(()=>{
+  scene.render();
+  const f=document.getElementById('fps');
+  if(f)f.textContent=Math.round(engine.getFps())+' FPS';
+});
+window.addEventListener('resize',()=>engine.resize());
+window.visualViewport?.addEventListener('resize',()=>engine.resize());
+
+loadCharacter();
+})();
