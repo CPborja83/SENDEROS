@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="theme-color" content="#071528">
-  <title>Senderos Lajuj · PRUEBA · Gameplay v10</title>
+  <title>Senderos Lajuj · PRUEBA · Gameplay v11</title>
   <style>
     *{box-sizing:border-box}
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#071528;color:#fff;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -46,6 +46,30 @@
       .actionPrompt{bottom:170px}
     }
 
+  
+    .consoleShell{border:8px solid #202b35;background:#3e4c58;padding:13px 15px 18px;box-shadow:0 26px 70px rgba(0,0,0,.58),inset 0 0 0 2px #70808c}
+    .consoleBrand{font-size:12px;letter-spacing:.18em;font-weight:950;color:#e9c85c;margin:0 0 8px}
+    .consoleScreen{background:#06151b;border:5px solid #19252c;border-radius:12px;padding:14px;box-shadow:inset 0 0 28px rgba(68,221,255,.13)}
+    .consoleScreen h2{color:#a7f5ff;text-shadow:0 0 12px rgba(101,225,255,.6)}
+    .consoleControls{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 10px 0}
+    .fakeStick{width:65px;height:65px;border-radius:50%;background:#222d34;position:relative;box-shadow:inset 0 0 0 5px #151d22}
+    .fakeStick span{position:absolute;width:18px;height:38px;background:#10161a;left:24px;top:1px;border-radius:10px}
+    .voicesPanel,.decisionOverlay{display:none;position:fixed;z-index:40;inset:0;background:rgba(2,8,15,.88);place-items:center;padding:16px}
+    .voicesPanel.show,.decisionOverlay.show{display:grid}
+    .voicesBox{width:min(850px,96vw);max-height:90vh;overflow:auto;background:#0b2032;border:1px solid #4687ac;border-radius:18px;padding:15px}
+    .voicesHeader{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+    .voicesHeader strong{display:block}.voicesHeader small{display:block;color:#b6dceb;margin-top:4px}
+    .voicesHeader button{background:#19354a;border:1px solid #4f829e;color:#fff;border-radius:9px;padding:7px 10px;cursor:pointer}
+    .voicesGrid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:8px}
+    .voicesGrid button{background:#123551;border:1px solid rgba(115,210,255,.34);border-radius:11px;color:#fff;padding:10px 8px;text-align:left;font-size:11px;font-weight:800;cursor:pointer}
+    .voicesGrid button:hover{background:#1c5277}
+    .decisionBox{width:min(530px,95vw);background:#0c2335;border:1px solid #d4a94d;border-radius:18px;padding:20px;box-shadow:0 22px 65px rgba(0,0,0,.55)}
+    .decisionTag{color:#ffd966;font-weight:950;font-size:11px;letter-spacing:.11em}.decisionBox h2{font-size:20px}
+    .decisionBox>button:not(.miniClose){display:block;width:100%;margin:8px 0;background:#123956;border:1px solid #487e9d;color:#fff;border-radius:12px;padding:12px;text-align:left;cursor:pointer}
+    .eventFlash{position:fixed;z-index:35;inset:0;pointer-events:none;opacity:0;background:#fff;transition:opacity .15s}
+    .eventFlash.on{opacity:.72}
+    @media(max-width:700px){.voicesGrid{grid-template-columns:repeat(2,minmax(120px,1fr))}}
+
   </style>
 </head>
 <body>
@@ -60,8 +84,8 @@
 
   <div class="topbar">
     <div class="card">
-      <div class="brand">🧪 PRUEBA · GAMEPLAY v10 · BEBÉ AZUL</div>
-      <div class="sub">Colisiones · parque · guía por voz · luces · mini juego · puntos.</div>
+      <div class="brand">🧪 PRUEBA · GAMEPLAY v11 · SENDEROS LAJUJ</div>
+      <div class="sub">Nubes de oscuridad · 16 voces/señales · sombra desde 60% · consola de mini juego.</div>
       <div id="status" class="status">Cargando…</div>
     </div>
     <div class="card stats"><b id="fps">-- FPS</b><span>Flechas/WASD · Shift correr</span></div>
@@ -85,28 +109,63 @@
     <div class="hudline">⭐ Puntos: <b id="score">0</b></div>
     <div class="hudline">🧭 Atención: <b id="attention">100</b>%</div>
     <div class="hudline">✨ Luces: <b id="lightsCount">0/3</b></div>
-    <button id="guideVoice" class="guideBtn" type="button">🔊 ACTIVAR GUÍA</button>
+    <button id="listenBtn" class="guideBtn" type="button">👂 ESCUCHAR</button>
+    <button id="voicesBtn" class="guideBtn" type="button">🎙️ PROBAR VOCES</button>
   </div>
 
   <div id="actionPrompt" class="actionPrompt">E · INICIAR MINI JUEGO</div>
   <div id="toast" class="toast"></div>
 
   <div id="minigame" class="minigame" aria-hidden="true">
-    <div class="minibox">
-      <h2>✨ Memoria de Luz</h2>
-      <p id="miniText">Observa la secuencia y repítela.</p>
-      <div id="sequence" class="sequence"></div>
-      <div class="miniBtns">
-        <button type="button" data-symbol="✨">✨</button>
-        <button type="button" data-symbol="📖">📖</button>
-        <button type="button" data-symbol="🤝">🤝</button>
+    <div class="minibox consoleShell">
+      <div class="consoleBrand">SENDEROS ARCADE</div>
+      <div class="consoleScreen">
+        <h2>✨ MEMORIA DE LUZ</h2>
+        <p id="miniText">Observa la secuencia y repítela.</p>
+        <div id="sequence" class="sequence"></div>
       </div>
-      <button id="miniClose" type="button" class="miniClose">Cerrar</button>
+      <div class="consoleControls">
+        <div class="fakeStick"><span></span></div>
+        <div class="miniBtns">
+          <button type="button" data-symbol="✨">✨</button>
+          <button type="button" data-symbol="📖">📖</button>
+          <button type="button" data-symbol="🤝">🤝</button>
+        </div>
+      </div>
+      <button id="miniClose" type="button" class="miniClose">SALIR DE LA CONSOLA</button>
     </div>
   </div>
 
+
+  <div id="voicesPanel" class="voicesPanel" aria-hidden="true">
+    <div class="voicesBox">
+      <div class="voicesHeader">
+        <div>
+          <strong>🎙️ PRUEBA DE LAS 16 VOCES / SEÑALES</strong>
+          <small>DyC 43:25 · cada botón prueba una representación jugable.</small>
+        </div>
+        <button id="voicesClose" type="button">✕</button>
+      </div>
+      <div id="voicesGrid" class="voicesGrid"></div>
+    </div>
+  </div>
+
+  <div id="decision" class="decisionOverlay" aria-hidden="true">
+    <div class="decisionBox">
+      <div class="decisionTag">DECISIÓN · ATENCIÓN</div>
+      <h2>Sentiste una impresión de detenerte y escuchar.</h2>
+      <p>¿Qué haces?</p>
+      <button type="button" data-decision="-30">📱 La ignoras y sigues distraído <b>−30</b></button>
+      <button type="button" data-decision="15">👂 Te detienes y escuchas <b>+15</b></button>
+      <button type="button" data-decision="25">✨ Sigues la impresión y corriges el rumbo <b>+25</b></button>
+      <button id="decisionClose" class="miniClose" type="button">Cerrar</button>
+    </div>
+  </div>
+
+  <div id="eventFlash" class="eventFlash"></div>
+
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
   <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-  <script src="js/model-test-bebe-gameplay-v10.js"></script>
+  <script src="js/model-test-bebe-gameplay-v11.js"></script>
 </body>
 </html>
