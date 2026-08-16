@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="theme-color" content="#071528">
-  <title>Senderos Lajuj · PRUEBA · Gameplay v18</title>
+  <title>Senderos Lajuj · PRUEBA · Gameplay v19</title>
   <style>
     *{box-sizing:border-box}
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#071528;color:#fff;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -89,6 +89,11 @@
     .destinationBanner{position:fixed;z-index:15;left:50%;top:79px;transform:translateX(-50%);display:none;background:rgba(15,39,54,.94);border:2px solid #f0d16b;border-radius:13px;padding:8px 14px;font-size:12px;font-weight:950;box-shadow:0 10px 30px rgba(0,0,0,.35)}
     .destinationBanner.show{display:block}
 
+  
+    .quickBox{border:5px solid #273846;background:#10283a}
+    .quickBox h2{margin:7px 0 5px}.quickBox p{color:#b9d9e7;font-size:12px}
+    .worldName{font-weight:950}
+
   </style>
 </head>
 <body>
@@ -103,8 +108,8 @@
 
   <div class="topbar">
     <div class="card">
-      <div class="brand">🧪 PRUEBA · GAMEPLAY v18 · INTERIORES + TINIEBLAS</div>
-      <div class="sub">Edificios sin techo · interiores visibles · vapor de tinieblas dinámico.</div>
+      <div class="brand">🧪 PRUEBA · GAMEPLAY v19 · CIUDAD VIVA</div>
+      <div class="sub">Casas multiambiente · hospital · biblioteca · iglesia · deportes · charcos · minijuegos.</div>
       <div id="status" class="status">Cargando…</div>
     </div>
     <div class="card stats"><b id="fps">-- FPS</b><span>Flechas/WASD · Shift correr</span></div>
@@ -167,6 +172,17 @@
   </div>
 
 
+
+  <div id="quickGame" class="minigame" aria-hidden="true">
+    <div class="minibox quickBox">
+      <div class="consoleBrand" id="quickLocation">ACTIVIDAD</div>
+      <h2 id="quickTitle">Mini juego</h2>
+      <p id="quickText"></p>
+      <div id="quickArea" class="questionAnswers"></div>
+      <button id="quickClose" type="button" class="miniClose">SALIR</button>
+    </div>
+  </div>
+
   <div id="voicesPanel" class="voicesPanel" aria-hidden="true">
     <div class="voicesBox">
       <div class="voicesHeader">
@@ -209,6 +225,6 @@
 
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
   <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-  <script src="js/model-test-bebe-gameplay-v18.js"></script>
+  <script src="js/model-test-bebe-gameplay-v19.js"></script>
 </body>
 </html>
