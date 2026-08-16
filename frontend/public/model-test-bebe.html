@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="theme-color" content="#071528">
-  <title>Senderos Lajuj · PRUEBA · Gameplay v11.1</title>
+  <title>Senderos Lajuj · PRUEBA · Gameplay v12</title>
   <style>
     *{box-sizing:border-box}
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#071528;color:#fff;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -70,6 +70,19 @@
     .eventFlash.on{opacity:.72}
     @media(max-width:700px){.voicesGrid{grid-template-columns:repeat(2,minmax(120px,1fr))}}
 
+  
+    .ageLine select{margin-left:5px;background:#102d42;color:#fff;border:1px solid #4f809c;border-radius:7px;padding:2px 5px;font-weight:800}
+    .questionOverlay{display:none;position:fixed;z-index:45;inset:0;background:rgba(2,7,12,.80);place-items:center;padding:18px;backdrop-filter:blur(4px)}
+    .questionOverlay.show{display:grid}
+    .questionCard{width:min(620px,95vw);background:#10283a;border:3px solid #263746;border-radius:20px;padding:18px;box-shadow:0 26px 70px rgba(0,0,0,.55),inset 0 0 0 2px rgba(112,203,255,.18)}
+    .questionHeader{display:flex;justify-content:space-between;font-size:11px;font-weight:950;letter-spacing:.09em;color:#8fe8ff}
+    .questionCard h2{font-size:21px;line-height:1.28;margin:11px 0 15px}
+    .questionAnswers{display:grid;gap:9px}
+    .questionAnswers button{border:2px solid #263746;background:#1b4865;color:#fff;border-radius:13px;padding:12px 13px;text-align:left;font-weight:850;cursor:pointer;box-shadow:inset 0 -3px rgba(0,0,0,.18)}
+    .questionAnswers button:hover{background:#276483;transform:translateY(-1px)}
+    .questionAnswers b{float:right;color:#ffe383}
+    .questionHint{margin-top:11px;font-size:10px;color:#a8cad9}
+
   </style>
 </head>
 <body>
@@ -84,14 +97,14 @@
 
   <div class="topbar">
     <div class="card">
-      <div class="brand">🧪 PRUEBA · GAMEPLAY v11.1 · SENDEROS LAJUJ</div>
-      <div class="sub">Nubes de oscuridad · 16 voces/señales · sombra desde 60% · consola de mini juego.</div>
+      <div class="brand">🧪 PRUEBA · GAMEPLAY v12 · CARTOON DETALLADO</div>
+      <div class="sub">Tormenta densa · escenario cartoon · preguntas por edad · consolas arcade.</div>
       <div id="status" class="status">Cargando…</div>
     </div>
     <div class="card stats"><b id="fps">-- FPS</b><span>Flechas/WASD · Shift correr</span></div>
   </div>
 
-  <div class="legend"><div class="card"><strong>Esta prueba:</strong> validar que quede de pie y que ◀ realmente vaya a la izquierda.</div></div>
+  <div class="legend"><div class="card"><strong>Esta prueba:</strong> estilo visual, tormenta, preguntas y mini juegos físicos.</div></div>
 
   <div class="mobile">
     <div class="pad">
@@ -108,7 +121,15 @@
   <div class="gamehud">
     <div class="hudline">⭐ Puntos: <b id="score">0</b></div>
     <div class="hudline">🧭 Atención: <b id="attention">100</b>%</div>
-    <div class="hudline">✨ Luces: <b id="lightsCount">0/3</b></div>
+    <div class="hudline">✨ Señales: <b id="lightsCount">0/3</b></div>
+    <div class="hudline ageLine">🎂 Edad:
+      <select id="testAge">
+        <option value="8">8 años</option>
+        <option value="12" selected>12 años</option>
+        <option value="14">14 años</option>
+        <option value="adult">Adulto</option>
+      </select>
+    </div>
     <button id="listenBtn" class="guideBtn" type="button">👂 ESCUCHAR</button>
     <button id="voicesBtn" class="guideBtn" type="button">🎙️ PROBAR VOCES</button>
   </div>
@@ -164,8 +185,21 @@
 
   <div id="eventFlash" class="eventFlash"></div>
 
+  <div id="questionOverlay" class="questionOverlay" aria-hidden="true">
+    <div class="questionCard">
+      <div class="questionHeader">
+        <span id="questionAge">DECISIÓN</span>
+        <span id="questionNumber">1/3</span>
+      </div>
+      <h2 id="questionText">Pregunta</h2>
+      <div id="questionAnswers" class="questionAnswers"></div>
+      <div class="questionHint">Elige la respuesta que represente lo que harías realmente.</div>
+    </div>
+  </div>
+
+
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
   <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-  <script src="js/model-test-bebe-gameplay-v11-1.js"></script>
+  <script src="js/model-test-bebe-gameplay-v12.js"></script>
 </body>
 </html>
